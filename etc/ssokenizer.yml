@@ -1,0 +1,15 @@
+seal_key: "$TOKENIZER_SEAL_KEY"
+relying_party_auth: "$RP_AUTH_SECRET"
+return_to:
+  - "$RP_RETURN_URL"
+http:
+  address: ":$PORT"
+  url: $SSOKENIZER_URL
+identity_providers:
+  google:
+    profile: google
+    client_id: "$GOOGLE_CLIENT_ID"
+    client_secret: "$GOOGLE_CLIENT_SECRET"
+    scopes:
+      - openid
+      - email

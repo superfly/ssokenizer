@@ -1,0 +1,197 @@
+package oauth2
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"net/http"
+	"net/http/cookiejar"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+
+	"github.com/alecthomas/assert/v2"
+	"github.com/sirupsen/logrus"
+	"github.com/superfly/ssokenizer"
+	"github.com/superfly/tokenizer"
+	"golang.org/x/crypto/nacl/box"
+	"golang.org/x/oauth2"
+)
+
+func init() {
+	logrus.SetLevel(logrus.DebugLevel)
+}
+
+func TestOauth2(t *testing.T) {
+	rpServer := httptest.NewServer(rp)
+	defer rpServer.Close()
+	t.Logf("rp=%s", rpServer.URL)
+
+	idpServer := httptest.NewServer(idp)
+	t.Cleanup(idpServer.Close)
+	t.Logf("idp=%s", idpServer.URL)
+
+	var (
+		pub, priv, _ = box.GenerateKey(rand.Reader)
+		sealKey      = hex.EncodeToString(pub[:])
+		openKey      = hex.EncodeToString(priv[:])
+	)
+
+	const rpAuth = "555"
+
+	tkz := tokenizer.NewTokenizer(openKey)
+	tkz.Tr = http.DefaultTransport.(*http.Transport) // disable TLS requirement for app server
+	tkzServer := httptest.NewServer(tkz)
+	t.Cleanup(tkzServer.Close)
+
+	skz, err := ssokenizer.NewServer(false, sealKey, rpAuth, []string{rpServer.URL})
+	assert.NoError(t, err)
+	assert.NoError(t, skz.Start("127.0.0.1:"))
+	t.Logf("skz=http://%s", skz.Address)
+	t.Cleanup(func() {
+		assert.NoError(t, skz.Shutdown(context.Background()))
+		<-skz.Done
+		assert.NoError(t, skz.Err)
+	})
+
+	assert.NoError(t, skz.AddProvider("idp", Config{
+		Config: oauth2.Config{
+			ClientID:     testClientID,
+			ClientSecret: testClientSecret,
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  idpServer.URL + "/auth",
+				TokenURL: idpServer.URL + "/token",
+			},
+			RedirectURL: "http://" + skz.Address + "/idp/callback",
+			Scopes:      []string{"my scope"},
+		},
+		RefreshURL: "http://" + skz.Address + "/idp/refresh",
+	}))
+
+	client := new(http.Client)
+	client.Jar, _ = cookiejar.New(nil)
+	client.Jar = noSecureJar{client.Jar}
+
+	resp, err := client.Get("http://" + skz.Address + "/idp/start")
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.True(t, strings.HasPrefix(resp.Request.URL.String(), rpServer.URL))
+	errMsg := resp.Request.URL.Query().Get("error")
+	assert.Equal(t, "", errMsg)
+	data := resp.Request.URL.Query().Get("data")
+	assert.NotEqual(t, "", data)
+
+	tkzClient, err := tokenizer.Client(tkzServer.URL, tokenizer.WithAuth(rpAuth), tokenizer.WithSecret(data, nil))
+	assert.NoError(t, err)
+	resp, err = tkzClient.Get(idpServer.URL + "/api")
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+const (
+	testClientID     = "my-client-id"
+	testClientSecret = "my-client-secret"
+)
+
+var idp = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	username, password, _ := r.BasicAuth()
+	authorization := r.Header.Get("Authorization")
+
+	logrus.WithFields(logrus.Fields{
+		"server":        "idp",
+		"method":        r.Method,
+		"url":           r.URL.String(),
+		"form":          r.Form,
+		"username":      username,
+		"password":      password,
+		"authorization": authorization,
+	}).Info()
+
+	switch r.URL.Path {
+	case "/auth":
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		query := r.URL.Query()
+
+		switch query.Get("client_id") {
+		case testClientID:
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		ru := query.Get("redirect_uri")
+		if ru == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		ruu, err := url.Parse(ru)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		params := make(url.Values)
+		params.Set("code", "111")
+		params.Set("state", query.Get("state"))
+		ruu.RawQuery = params.Encode()
+
+		http.Redirect(w, r, ruu.String(), http.StatusFound)
+		return
+	case "/token":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if username != testClientID || password != testClientSecret {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.Form.Get("code") != "111" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"access_token": "999", "token_type": "Bearer", "refresh_token": "888", "expires_in": 3600}`))
+		return
+	case "/api":
+		if authorization != "Bearer 999" {
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+		return
+	}
+})
+
+var rp = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"server": "rp",
+		"method": r.Method,
+		"url":    r.URL.String(),
+		"form":   r.Form,
+	}).Info()
+})
+
+type noSecureJar struct {
+	http.CookieJar
+}
+
+func (j noSecureJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
+	for _, cookie := range cookies {
+		cookie.Secure = false
+	}
+	j.CookieJar.SetCookies(u, cookies)
+}

@@ -1,0 +1,38 @@
+// https://sequencediagram.org/
+title SSO Flow
+
+participant user
+participant ui-ex
+participant tokenizer
+participant ssokenizer
+participant google
+
+user->ui-ex: GET /login/google
+ui-ex->user: 301 → https://ssokenizer/google/start
+user->ssokenizer: GET /google/start
+ssokenizer->user: 301 → https://google/auth?client_id=...
+user->google: GET /auth?client_id=xxx
+google->google: auth user\ncheck consent
+google->user: 301 → https://ssokenizer/callback?code=111
+user->ssokenizer:  GET /callback?code=111
+ssokenizer->google: POST /auth\nw/code, client_id, client_secret
+google->ssokenizer: 200\n{access_token:222, refresh_token:333}
+ssokenizer->ssokenizer: seal({access_token:222, refresh_token:333})
+ssokenizer->user: 301 → https://ui-ex/callback?data=sealed-token
+user->ui-ex: GET /callback?data=sealed-token
+ui-ex->tokenizer: GET https://google/user\nw/sealed-token
+tokenizer->tokenizer: open(sealed-token)
+tokenizer->google: GET /user\nw/access_token
+google->tokenizer: 200\n{user: ...}
+tokenizer->ui-ex: 200\n{user: ...}
+ui-ex->user: 200\nSet-Cookie: user=...
+==time passes. access_token expires==
+ui-ex->tokenizer: GET https://google/user\nw/sealed-token
+tokenizer->tokenizer: open(sealed-token)
+tokenizer->ssokenizer: POST /refresh\nw/refresh_token
+ssokenizer->google: POST /refresh\nw/refresh_token, client_id, client_secret
+google->ssokenizer: 200\n{access_token: 444}
+ssokenizer->tokenizer: 200 {access_token: 444}
+tokenizer->google: GET /user\nw/new access_token
+google->tokenizer: 200 {user: ...}
+tokenizer->ui-ex: 200 {user: ...}
