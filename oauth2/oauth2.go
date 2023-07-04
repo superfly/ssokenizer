@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
-	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 	"github.com/superfly/ssokenizer"
 	"github.com/superfly/tokenizer"
@@ -15,34 +15,34 @@ import (
 
 type Config struct {
 	oauth2.Config
-	RefreshURL        string
+
+	// Where tokenizer should request refreshes
+	// (https://ssokenizer/<name>/refresh)
+	RefreshURL string
+
+	// Request validators to add to the tokenizer secret. This allows limiting
+	// what hosts the secret can be used with.
 	RequestValidators []tokenizer.RequestValidator
 }
 
 var _ ssokenizer.ProviderConfig = Config{}
 
-func (c Config) Register(r *mux.Router, sealKey string, rpAuth string) error {
+func (c Config) Register(sealKey string, rpAuth string) (http.Handler, error) {
 	switch {
 	case c.ClientID == "":
-		return errors.New("missing client_id")
+		return nil, errors.New("missing client_id")
 	case c.ClientSecret == "":
-		return errors.New("missing client_secret")
+		return nil, errors.New("missing client_secret")
 	case c.ClientSecret == "":
-		return errors.New("missing refresh_url")
+		return nil, errors.New("missing refresh_url")
 	}
 
-	p := &provider{
+	return &provider{
 		sealKey:           sealKey,
 		rpAuth:            rpAuth,
 		requestValidators: c.RequestValidators,
 		Config:            c,
-	}
-
-	r.Methods(http.MethodGet).Path(startPath).HandlerFunc(p.handleStart)
-	r.Methods(http.MethodGet).Path(callbackPath).HandlerFunc(p.handleCallback)
-	r.Methods(http.MethodPost).Path(refreshPath).HandlerFunc(p.handleRefresh)
-
-	return nil
+	}, nil
 }
 
 type provider struct {
@@ -57,6 +57,19 @@ const (
 	callbackPath = "/callback"
 	refreshPath  = "/refresh"
 )
+
+func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch path := strings.TrimSuffix(r.URL.Path, "/"); path {
+	case startPath:
+		p.handleStart(w, r)
+	case callbackPath:
+		p.handleCallback(w, r)
+	case refreshPath:
+		p.handleRefresh(w, r)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
 
 func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 	tr, ok := ssokenizer.GetTransaction(r)

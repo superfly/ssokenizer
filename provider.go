@@ -1,9 +1,7 @@
 package ssokenizer
 
-import (
-	"github.com/gorilla/mux"
-)
+import "net/http"
 
 type ProviderConfig interface {
-	Register(r *mux.Router, sealKey string, rpAuth string) error
+	Register(sealKey string, rpAuth string) (http.Handler, error)
 }

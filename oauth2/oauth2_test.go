@@ -45,8 +45,7 @@ func TestOauth2(t *testing.T) {
 	tkzServer := httptest.NewServer(tkz)
 	t.Cleanup(tkzServer.Close)
 
-	skz, err := ssokenizer.NewServer(false, sealKey, rpAuth, []string{rpServer.URL})
-	assert.NoError(t, err)
+	skz := ssokenizer.NewServer(sealKey, rpAuth, rpServer.URL)
 	assert.NoError(t, skz.Start("127.0.0.1:"))
 	t.Logf("skz=http://%s", skz.Address)
 	t.Cleanup(func() {

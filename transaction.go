@@ -8,10 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/gorilla/mux"
-	"github.com/sirupsen/logrus"
 	"github.com/vmihailenco/msgpack/v5"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -21,10 +18,11 @@ const (
 )
 
 type Transaction struct {
-	ReturnTo    string    `json:"return_to"`
+	ReturnURL   string    `json:"return_url"`
 	ReturnState string    `json:"return_state"`
 	Nonce       string    `json:"nonce"`
 	Expiry      time.Time `json:"expiry"`
+	cookiePath  string
 }
 
 func (t *Transaction) ReturnData(w http.ResponseWriter, r *http.Request, data string) {
@@ -36,16 +34,15 @@ func (t *Transaction) ReturnError(w http.ResponseWriter, r *http.Request, msg st
 }
 
 func (t *Transaction) returnDataOrError(w http.ResponseWriter, r *http.Request, data *string, errorMsg *string) {
-	clearTransactionCookie(w)
+	t.setCookie(w, r, "")
 
-	u, err := url.Parse(t.ReturnTo)
+	returnURL, err := url.Parse(t.ReturnURL)
 	if err != nil {
-		logrus.WithError(err).Warn("bad return to")
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	q := u.Query()
+	q := returnURL.Query()
 
 	if data != nil {
 		q.Set("data", *data)
@@ -57,91 +54,50 @@ func (t *Transaction) returnDataOrError(w http.ResponseWriter, r *http.Request, 
 		q.Set("state", t.ReturnState)
 	}
 
-	u.RawQuery = q.Encode()
-	http.Redirect(w, r, u.String(), http.StatusFound)
+	returnURL.RawQuery = q.Encode()
+	http.Redirect(w, r, returnURL.String(), http.StatusFound)
 }
 
-func transactionMiddleware(tls bool, allowedReturnTo []string) mux.MiddlewareFunc {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var t *Transaction
-
-			params := r.URL.Query()
-
-			badRequest := func() {
-				clearTransactionCookie(w)
-				http.Error(w, "bad request", http.StatusBadRequest)
-			}
-
-			if rt := params.Get(returnToParam); rt != "" {
-				logrus.Debug("new transaction: return_to in query")
-				if !slices.Contains(allowedReturnTo, rt) {
-					logrus.WithField("return_to", rt).Warn("non allowed return_to param")
-					badRequest()
-					return
-				}
-
-				t = &Transaction{
-					ReturnTo:    rt,
-					ReturnState: params.Get("state"),
-					Expiry:      time.Now().Add(transactionTTL),
-					Nonce:       randHex(16),
-				}
-			} else if tc, err := r.Cookie(transactionCookieName); err != http.ErrNoCookie {
-				logrus.Debug("old transaction: found cookie")
-				mpt, err := base64.StdEncoding.DecodeString(tc.Value)
-				if err != nil {
-					logrus.WithError(err).Warn("bad transaction cookie b64")
-					badRequest()
-				}
-
-				t = new(Transaction)
-				if err = msgpack.Unmarshal(mpt, t); err != nil {
-					logrus.WithError(err).Warn("bad transaction cookie msgpack")
-					badRequest()
-					return
-				}
-
-				if time.Now().After(t.Expiry) {
-					logrus.Warn("expired transaction")
-					t.ReturnError(w, r, "expired")
-					return
-				}
-			} else {
-				logrus.Debug("new transaction: default return-to")
-				// first rt is default
-				t = &Transaction{
-					ReturnTo:    allowedReturnTo[0],
-					ReturnState: params.Get("state"),
-					Expiry:      time.Now().Add(transactionTTL),
-					Nonce:       randHex(16),
-				}
-			}
-
-			mpt, err := msgpack.Marshal(t)
-			if err != nil {
-				logrus.WithError(err).Warn("marshal transaction cookie")
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			http.SetCookie(w, &http.Cookie{
-				Name:     transactionCookieName,
-				Value:    base64.StdEncoding.EncodeToString(mpt),
-				Secure:   tls,
-				HttpOnly: true,
-				SameSite: http.SameSiteLaxMode,
-			})
-
-			r = r.WithContext(withTransaction(r.Context(), t))
-
-			next.ServeHTTP(w, r)
-		})
+func unmarshalTransaction(s string) (*Transaction, error) {
+	m, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return nil, err
 	}
+
+	t := new(Transaction)
+	if err = msgpack.Unmarshal(m, t); err != nil {
+		return nil, err
+	}
+
+	return t, nil
 }
 
-func clearTransactionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: transactionCookieName, Value: "", MaxAge: -1})
+func (t *Transaction) marshal() (string, error) {
+	m, err := msgpack.Marshal(t)
+	if err != nil {
+		return "", err
+	}
+
+	return base64.StdEncoding.EncodeToString(m), nil
+}
+
+func (t *Transaction) setCookie(w http.ResponseWriter, r *http.Request, v string) {
+	tls := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+
+	var maxAge int
+	if v == "" {
+		maxAge = -1
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     transactionCookieName,
+		Value:    v,
+		Path:     t.cookiePath,
+		Secure:   tls,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   maxAge,
+	})
 }
 
 func randHex(n int) string {

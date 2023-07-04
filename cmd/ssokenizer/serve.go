@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -73,21 +72,13 @@ Arguments:
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	u, err := url.Parse(c.Config.HTTP.URL)
-	if err != nil {
-		return err
-	}
-	tls := u.Scheme == "https"
-
-	server, err := ssokenizer.NewServer(tls, c.Config.SealKey, c.Config.RelyingPartyAuth, c.Config.ReturnTo)
-	if err != nil {
-		return err
-	}
-
+	server := ssokenizer.NewServer(c.Config.SealKey, c.Config.RelyingPartyAuth, c.Config.ReturnURL)
 	baseURL := strings.TrimSuffix(c.Config.HTTP.URL, "/")
 
 	for name, p := range c.Config.IdentityProviders {
-		pc, err := p.providerConfig(baseURL + "/" + name)
+		providerBaseURL := baseURL + "/" + name
+
+		pc, err := p.providerConfig(providerBaseURL)
 		if err != nil {
 			return err
 		}

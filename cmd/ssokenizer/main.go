@@ -55,14 +55,15 @@ func Run(ctx context.Context, args []string) error {
 }
 
 type Config struct {
-	// tokenizer seal (public) key
+	// Tokenizer seal (public) key
 	SealKey string `yaml:"seal_key"`
 
-	// auth key to put on tokenizer secrets
+	// Auth key to put on tokenizer secrets
 	RelyingPartyAuth string `yaml:"relying_party_auth"`
 
-	// allowed rp urls to return user to after auth dance
-	ReturnTo []string `yaml:"return_to"`
+	// Where to return user after auth dance. If present, the string `:name` is
+	// replaced with the provider name.
+	ReturnURL string `yaml:"return_to"`
 
 	Log               LogConfig                         `yaml:"log"`
 	HTTP              HTTPConfig                        `yaml:"http"`
@@ -83,7 +84,7 @@ func (c *Config) Validate() error {
 	if c.SealKey == "" {
 		return errors.New("missing seal_key")
 	}
-	if len(c.ReturnTo) == 0 {
+	if c.ReturnURL == "" {
 		return errors.New("missing return_to")
 	}
 	if c.HTTP.Address == "" {

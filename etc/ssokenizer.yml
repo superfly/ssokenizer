@@ -1,10 +1,19 @@
+# public part of tokenizer's keypair
 seal_key: "$TOKENIZER_SEAL_KEY"
-relying_party_auth: "$RP_AUTH_SECRET"
-return_to:
-  - "$RP_RETURN_URL"
+
+# secret that RP will use to authenticate to tokenizer
+relying_party_auth: "$UIEX_SECRET_AUTH"
+
+# where the user is returned after auth dance
+return_to: "$UIEX_RETURN_URL"
+
 http:
+  # where ssokenizer should listen
   address: ":$PORT"
+
+  # where users can reach ssokenizer
   url: $SSOKENIZER_URL
+
 identity_providers:
   google:
     profile: google

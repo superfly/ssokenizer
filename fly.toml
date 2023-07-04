@@ -1,0 +1,32 @@
+app = "ssokenizer"
+kill_signal = "SIGTERM"
+kill_timeout = 5
+primary_region = "ord"
+processes = []
+
+[experimental]
+  auto_rollback = true
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 10000
+    hard_limit = 10000
+  [http_service.checks]
+    grace_period = "5s"
+    interval = "30s"
+    method = "GET"
+    timeout = "100ms"
+    path = "/health"
+
+[env]
+    TOKENIZER_SEAL_KEY = "3afdb665d93f741adc98a6cfecb36f1e02403a095e8efa921fd2321857011f42"
+    UIEX_RETURN_URL = "https://fly.io/app/auth/:name/callback"
+    SSOKENIZER_URL = "https://ssokenizer.fly.dev"
+    GOOGLE_CLIENT_ID = "106698048514-di2a38jchr0g73af1a99tjineng55iso.apps.googleusercontent.com"
+    PORT = "8080"

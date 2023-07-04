@@ -2,10 +2,12 @@ package ssokenizer
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
+	"strings"
+	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 )
 
@@ -14,38 +16,97 @@ type Server struct {
 	Done    chan struct{}
 	Err     error
 
-	sealKey string
-	rpAuth  string
-	http    *http.Server
-	router  *mux.Router
+	returnURL string
+	sealKey   string
+	rpAuth    string
+
+	providers map[string]http.Handler
+	http      *http.Server
 }
 
-func NewServer(tls bool, sealKey string, rpAuth string, returnTo []string) (*Server, error) {
-	router := mux.NewRouter()
-	router.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			logrus.WithFields(logrus.Fields{
-				"method": r.Method,
-				"uri":    r.URL.String(),
-			}).Info()
+func NewServer(sealKey string, rpAuth string, returnURL string) *Server {
+	s := &Server{
+		sealKey:   sealKey,
+		rpAuth:    rpAuth,
+		providers: map[string]http.Handler{"health": handleHealth},
+		returnURL: returnURL,
+	}
 
-			w.Header().Set("Referrer-Policy", "origin-when-cross-origin")
+	s.http = &http.Server{Handler: s}
 
-			next.ServeHTTP(w, r)
-		})
-	})
-	router.Use(transactionMiddleware(tls, returnTo))
+	return s
+}
 
-	return &Server{
-		sealKey: sealKey,
-		rpAuth:  rpAuth,
-		http:    &http.Server{Handler: router},
-		router:  router,
-	}, nil
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	logrus.WithFields(logrus.Fields{"method": r.Method, "uri": r.URL.Path}).Info()
+
+	providerName, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	provider, ok := s.providers[providerName]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	t := &Transaction{
+		ReturnURL:   strings.ReplaceAll(s.returnURL, ":name", providerName),
+		ReturnState: r.URL.Query().Get("state"),
+		Nonce:       randHex(16),
+		Expiry:      time.Now().Add(transactionTTL),
+		cookiePath:  "/" + providerName,
+	}
+
+	if tc, err := r.Cookie(transactionCookieName); err != http.ErrNoCookie && tc.Value != "" {
+		ct, err := unmarshalTransaction(tc.Value)
+		if err != nil {
+			logrus.WithError(err).Warn("bad transaction cookie")
+			t.ReturnError(w, r, "bad request")
+			return
+		}
+
+		if ct.ReturnURL != t.ReturnURL {
+			logrus.WithFields(logrus.Fields{"have": ct.ReturnURL, "want": t.ReturnURL}).Warn("bad transaction cookie return URL")
+			t.ReturnError(w, r, "bad request")
+			return
+		}
+
+		if time.Now().After(ct.Expiry) {
+			logrus.Warn("expired transaction")
+			t.ReturnError(w, r, "expired")
+			return
+		}
+
+		// accept the existing cookie
+		ct.cookiePath = t.cookiePath
+		t = ct
+	}
+
+	ts, err := t.marshal()
+	if err != nil {
+		logrus.WithError(err).Warn("marshal transaction cookie")
+		t.ReturnError(w, r, "unexpected error")
+		return
+	}
+
+	t.setCookie(w, r, ts)
+	r = r.WithContext(withTransaction(r.Context(), t))
+	r.URL.Path = "/" + rest
+
+	provider.ServeHTTP(w, r)
 }
 
 func (s *Server) AddProvider(name string, pc ProviderConfig) error {
-	return pc.Register(s.router.PathPrefix("/"+name).Subrouter(), s.sealKey, s.rpAuth)
+	if _, dup := s.providers[name]; dup {
+		return fmt.Errorf("duplicate provider: %s", name)
+	}
+
+	p, err := pc.Register(s.sealKey, s.rpAuth)
+	if err != nil {
+		return err
+	}
+
+	s.providers[name] = p
+
+	return nil
 }
 
 func (s *Server) Start(address string) error {
@@ -69,3 +130,5 @@ func (s *Server) Start(address string) error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
+
+var handleHealth http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) }
