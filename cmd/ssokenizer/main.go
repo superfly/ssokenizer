@@ -84,9 +84,6 @@ func (c *Config) Validate() error {
 	if c.SealKey == "" {
 		return errors.New("missing seal_key")
 	}
-	if c.ReturnURL == "" {
-		return errors.New("missing return_url")
-	}
 	if c.HTTP.Address == "" {
 		return errors.New("missing http.address")
 	}
