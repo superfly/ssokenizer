@@ -4,9 +4,6 @@ seal_key: "$TOKENIZER_SEAL_KEY"
 # secret that RP will use to authenticate to tokenizer
 relying_party_auth: "$UIEX_SECRET_AUTH"
 
-# where the user is returned after auth dance
-return_to: "$UIEX_RETURN_URL"
-
 http:
   # where ssokenizer should listen
   address: ":$PORT"
@@ -19,6 +16,15 @@ identity_providers:
     profile: google
     client_id: "$GOOGLE_CLIENT_ID"
     client_secret: "$GOOGLE_CLIENT_SECRET"
+    return_url: "$GOOGLE_RETURN_URL"
+    scopes:
+      - openid
+      - email
+  google_staging:
+    profile: google
+    client_id: "$GOOGLE_CLIENT_ID"
+    client_secret: "$GOOGLE_CLIENT_SECRET"
+    return_url: "$GOOGLE_STAGING_RETURN_URL"
     scopes:
       - openid
       - email

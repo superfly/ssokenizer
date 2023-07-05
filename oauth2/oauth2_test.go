@@ -45,7 +45,7 @@ func TestOauth2(t *testing.T) {
 	tkzServer := httptest.NewServer(tkz)
 	t.Cleanup(tkzServer.Close)
 
-	skz := ssokenizer.NewServer(sealKey, rpAuth, rpServer.URL)
+	skz := ssokenizer.NewServer(sealKey, rpAuth)
 	assert.NoError(t, skz.Start("127.0.0.1:"))
 	t.Logf("skz=http://%s", skz.Address)
 	t.Cleanup(func() {
@@ -66,7 +66,7 @@ func TestOauth2(t *testing.T) {
 			Scopes:      []string{"my scope"},
 		},
 		RefreshURL: "http://" + skz.Address + "/idp/refresh",
-	}))
+	}, rpServer.URL))
 
 	client := new(http.Client)
 	client.Jar, _ = cookiejar.New(nil)

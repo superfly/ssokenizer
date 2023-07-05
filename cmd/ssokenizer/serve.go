@@ -72,17 +72,21 @@ Arguments:
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	server := ssokenizer.NewServer(c.Config.SealKey, c.Config.RelyingPartyAuth, c.Config.ReturnURL)
+	server := ssokenizer.NewServer(c.Config.SealKey, c.Config.RelyingPartyAuth)
 	baseURL := strings.TrimSuffix(c.Config.HTTP.URL, "/")
 
 	for name, p := range c.Config.IdentityProviders {
 		providerBaseURL := baseURL + "/" + name
+		returnURL := p.ReturnURL
+		if returnURL == "" {
+			returnURL = strings.ReplaceAll(c.Config.ReturnURL, ":name", name)
+		}
 
-		pc, err := p.providerConfig(providerBaseURL)
+		pc, err := p.providerConfig(providerBaseURL, returnURL)
 		if err != nil {
 			return err
 		}
-		server.AddProvider(name, pc)
+		server.AddProvider(name, pc, returnURL)
 	}
 
 	if err := server.Start(c.Config.HTTP.Address); err != nil {

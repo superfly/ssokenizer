@@ -14,14 +14,13 @@ import (
 const (
 	transactionCookieName = "transaction"
 	transactionTTL        = time.Hour
-	returnToParam         = "return_to"
 )
 
 type Transaction struct {
-	ReturnURL   string    `json:"return_url"`
 	ReturnState string    `json:"return_state"`
 	Nonce       string    `json:"nonce"`
 	Expiry      time.Time `json:"expiry"`
+	returnURL   *url.URL
 	cookiePath  string
 }
 
@@ -36,12 +35,7 @@ func (t *Transaction) ReturnError(w http.ResponseWriter, r *http.Request, msg st
 func (t *Transaction) returnDataOrError(w http.ResponseWriter, r *http.Request, data *string, errorMsg *string) {
 	t.setCookie(w, r, "")
 
-	returnURL, err := url.Parse(t.ReturnURL)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
+	returnURL := *t.returnURL
 	q := returnURL.Query()
 
 	if data != nil {
@@ -58,18 +52,17 @@ func (t *Transaction) returnDataOrError(w http.ResponseWriter, r *http.Request, 
 	http.Redirect(w, r, returnURL.String(), http.StatusFound)
 }
 
-func unmarshalTransaction(s string) (*Transaction, error) {
+func unmarshalTransaction(t *Transaction, s string) error {
 	m, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	t := new(Transaction)
 	if err = msgpack.Unmarshal(m, t); err != nil {
-		return nil, err
+		return err
 	}
 
-	return t, nil
+	return nil
 }
 
 func (t *Transaction) marshal() (string, error) {

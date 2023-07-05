@@ -62,8 +62,8 @@ type Config struct {
 	RelyingPartyAuth string `yaml:"relying_party_auth"`
 
 	// Where to return user after auth dance. If present, the string `:name` is
-	// replaced with the provider name.
-	ReturnURL string `yaml:"return_to"`
+	// replaced with the provider name. Can also be specified per-provider.
+	ReturnURL string `yaml:"return_url"`
 
 	Log               LogConfig                         `yaml:"log"`
 	HTTP              HTTPConfig                        `yaml:"http"`
@@ -85,13 +85,18 @@ func (c *Config) Validate() error {
 		return errors.New("missing seal_key")
 	}
 	if c.ReturnURL == "" {
-		return errors.New("missing return_to")
+		return errors.New("missing return_url")
 	}
 	if c.HTTP.Address == "" {
 		return errors.New("missing http.address")
 	}
 	if c.HTTP.URL == "" {
 		return errors.New("missing http.url")
+	}
+	for _, pc := range c.IdentityProviders {
+		if err := pc.Validate(c.ReturnURL == ""); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -120,9 +125,12 @@ type IdentityProviderConfig struct {
 
 	// oauth scopes to request
 	Scopes []string `yaml:"scopes"`
+
+	// Where to return user after auth dance. Can also be specified globally.
+	ReturnURL string `yaml:"return_url"`
 }
 
-func (c IdentityProviderConfig) providerConfig(baseURL string) (ssokenizer.ProviderConfig, error) {
+func (c IdentityProviderConfig) providerConfig(baseURL, returnURL string) (ssokenizer.ProviderConfig, error) {
 	switch c.Profile {
 	case "google":
 		return google.Config{
@@ -135,6 +143,17 @@ func (c IdentityProviderConfig) providerConfig(baseURL string) (ssokenizer.Provi
 	default:
 		return nil, fmt.Errorf("unknown identity provider profile: %s", c.Profile)
 	}
+}
+
+func (c IdentityProviderConfig) Validate(needsReturnURL bool) error {
+	if c.Profile == "" {
+		return errors.New("missing identity_providers.profile")
+	}
+	if c.ReturnURL == "" && needsReturnURL {
+		return errors.New("missing return_url or identity_providers.return_url")
+	}
+
+	return nil
 }
 
 // UnmarshalConfig unmarshals config from data. Expands variables as needed.

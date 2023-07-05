@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -16,20 +17,20 @@ type Server struct {
 	Done    chan struct{}
 	Err     error
 
-	returnURL string
-	sealKey   string
-	rpAuth    string
+	sealKey string
+	rpAuth  string
 
-	providers map[string]http.Handler
+	providers map[string]*provider
 	http      *http.Server
 }
 
-func NewServer(sealKey string, rpAuth string, returnURL string) *Server {
+func NewServer(sealKey string, rpAuth string) *Server {
 	s := &Server{
-		sealKey:   sealKey,
-		rpAuth:    rpAuth,
-		providers: map[string]http.Handler{"health": handleHealth},
-		returnURL: returnURL,
+		sealKey: sealKey,
+		rpAuth:  rpAuth,
+		providers: map[string](*provider){
+			"health": &provider{handler: handleHealth},
+		},
 	}
 
 	s.http = &http.Server{Handler: s}
@@ -48,36 +49,26 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	t := &Transaction{
-		ReturnURL:   strings.ReplaceAll(s.returnURL, ":name", providerName),
 		ReturnState: r.URL.Query().Get("state"),
 		Nonce:       randHex(16),
 		Expiry:      time.Now().Add(transactionTTL),
-		cookiePath:  "/" + providerName,
+
+		returnURL:  provider.returnURL,
+		cookiePath: "/" + providerName,
 	}
 
 	if tc, err := r.Cookie(transactionCookieName); err != http.ErrNoCookie && tc.Value != "" {
-		ct, err := unmarshalTransaction(tc.Value)
-		if err != nil {
+		if err := unmarshalTransaction(t, tc.Value); err != nil {
 			logrus.WithError(err).Warn("bad transaction cookie")
 			t.ReturnError(w, r, "bad request")
 			return
 		}
 
-		if ct.ReturnURL != t.ReturnURL {
-			logrus.WithFields(logrus.Fields{"have": ct.ReturnURL, "want": t.ReturnURL}).Warn("bad transaction cookie return URL")
-			t.ReturnError(w, r, "bad request")
-			return
-		}
-
-		if time.Now().After(ct.Expiry) {
+		if time.Now().After(t.Expiry) {
 			logrus.Warn("expired transaction")
 			t.ReturnError(w, r, "expired")
 			return
 		}
-
-		// accept the existing cookie
-		ct.cookiePath = t.cookiePath
-		t = ct
 	}
 
 	ts, err := t.marshal()
@@ -91,10 +82,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(withTransaction(r.Context(), t))
 	r.URL.Path = "/" + rest
 
-	provider.ServeHTTP(w, r)
+	provider.handler.ServeHTTP(w, r)
 }
 
-func (s *Server) AddProvider(name string, pc ProviderConfig) error {
+func (s *Server) AddProvider(name string, pc ProviderConfig, returnURL string) error {
 	if _, dup := s.providers[name]; dup {
 		return fmt.Errorf("duplicate provider: %s", name)
 	}
@@ -104,7 +95,12 @@ func (s *Server) AddProvider(name string, pc ProviderConfig) error {
 		return err
 	}
 
-	s.providers[name] = p
+	ru, err := url.Parse(returnURL)
+	if err != nil {
+		return err
+	}
+
+	s.providers[name] = &provider{handler: p, returnURL: ru}
 
 	return nil
 }
