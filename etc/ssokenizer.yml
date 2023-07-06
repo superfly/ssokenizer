@@ -20,6 +20,7 @@ identity_providers:
     scopes:
       - openid
       - email
+      - profile
   google_staging:
     profile: google
     client_id: "$GOOGLE_CLIENT_ID"
@@ -28,3 +29,4 @@ identity_providers:
     scopes:
       - openid
       - email
+      - profile

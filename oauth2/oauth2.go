@@ -2,10 +2,12 @@ package oauth2
 
 import (
 	"crypto/subtle"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/superfly/ssokenizer"
@@ -15,10 +17,6 @@ import (
 
 type Config struct {
 	oauth2.Config
-
-	// Where tokenizer should request refreshes
-	// (https://ssokenizer/<name>/refresh)
-	RefreshURL string
 
 	// Request validators to add to the tokenizer secret. This allows limiting
 	// what hosts the secret can be used with.
@@ -126,9 +124,10 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	secret := &tokenizer.Secret{
 		AuthConfig: tokenizer.NewBearerAuthConfig(p.rpAuth),
-		ProcessorConfig: &tokenizer.OAuth2ProcessorConfig{
-			RefreshURL: p.RefreshURL,
-			Token:      tok,
+		ProcessorConfig: &tokenizer.OAuthProcessorConfig{
+			Token: &tokenizer.OAuthToken{
+				AccessToken:  tok.AccessToken,
+				RefreshToken: tok.RefreshToken},
 		},
 		RequestValidators: p.requestValidators,
 	}
@@ -140,32 +139,52 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tr.ReturnData(w, r, sealed)
+	tr.ReturnData(w, r, map[string]string{
+		"data":    sealed, // remove this
+		"sealed":  sealed,
+		"expires": strconv.FormatInt(tok.Expiry.Unix(), 10),
+	})
 }
 
 func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Content-Type") != "application/json" {
-		w.WriteHeader(http.StatusBadRequest)
+	refreshToken, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok {
+		logrus.Warn("refresh: missing token")
+		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
-	t := new(oauth2.Token)
-	if err := json.NewDecoder(r.Body).Decode(t); err != nil {
-		logrus.WithError(err).Warn("decode refresh request")
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	ret, err := p.TokenSource(r.Context(), t).Token()
+	tok, err := p.TokenSource(r.Context(), &oauth2.Token{RefreshToken: refreshToken}).Token()
 	if err != nil {
-		logrus.WithError(err).Warn("do refresh")
+		logrus.WithError(err).Warn("refresh")
 		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(ret); err != nil {
-		logrus.WithError(err).Warn("write response")
+	secret := &tokenizer.Secret{
+		AuthConfig: tokenizer.NewBearerAuthConfig(p.rpAuth),
+		ProcessorConfig: &tokenizer.OAuthProcessorConfig{
+			Token: &tokenizer.OAuthToken{
+				AccessToken:  tok.AccessToken,
+				RefreshToken: tok.RefreshToken,
+			},
+		},
+		RequestValidators: p.requestValidators,
+	}
+
+	sealed, err := secret.Seal(p.sealKey)
+	if err != nil {
+		logrus.WithError(err).Warn("refresh: failed seal")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", time.Until(tok.Expiry)/time.Second))
+
+	if _, err := w.Write([]byte(sealed)); err != nil {
 		// status already written
+		logrus.WithError(err).Warn("refresh: write response")
 		return
 	}
 }

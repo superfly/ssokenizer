@@ -17,33 +17,31 @@ const (
 )
 
 type Transaction struct {
-	ReturnState string    `json:"return_state"`
-	Nonce       string    `json:"nonce"`
-	Expiry      time.Time `json:"expiry"`
+	ReturnState string
+	Nonce       string
+	Expiry      time.Time
 	returnURL   *url.URL
 	cookiePath  string
 }
 
-func (t *Transaction) ReturnData(w http.ResponseWriter, r *http.Request, data string) {
-	t.returnDataOrError(w, r, &data, nil)
+func (t *Transaction) ReturnData(w http.ResponseWriter, r *http.Request, data map[string]string) {
+	t.returnData(w, r, data)
 }
 
 func (t *Transaction) ReturnError(w http.ResponseWriter, r *http.Request, msg string) {
-	t.returnDataOrError(w, r, nil, &msg)
+	t.returnData(w, r, map[string]string{"error": msg})
 }
 
-func (t *Transaction) returnDataOrError(w http.ResponseWriter, r *http.Request, data *string, errorMsg *string) {
+func (t *Transaction) returnData(w http.ResponseWriter, r *http.Request, data map[string]string) {
 	t.setCookie(w, r, "")
 
 	returnURL := *t.returnURL
 	q := returnURL.Query()
 
-	if data != nil {
-		q.Set("data", *data)
+	for k, v := range data {
+		q.Set(k, v)
 	}
-	if errorMsg != nil {
-		q.Set("error", *errorMsg)
-	}
+
 	if t.ReturnState != "" {
 		q.Set("state", t.ReturnState)
 	}
@@ -58,11 +56,7 @@ func unmarshalTransaction(t *Transaction, s string) error {
 		return err
 	}
 
-	if err = msgpack.Unmarshal(m, t); err != nil {
-		return err
-	}
-
-	return nil
+	return msgpack.Unmarshal(m, t)
 }
 
 func (t *Transaction) marshal() (string, error) {

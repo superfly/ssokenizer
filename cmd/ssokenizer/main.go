@@ -135,7 +135,6 @@ func (c IdentityProviderConfig) providerConfig(baseURL, returnURL string) (ssoke
 			ClientSecret: c.ClientSecret,
 			Scopes:       c.Scopes,
 			RedirectURL:  baseURL + "/callback",
-			RefreshURL:   baseURL + "/refresh",
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown identity provider profile: %s", c.Profile)

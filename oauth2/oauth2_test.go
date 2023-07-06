@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alecthomas/assert/v2"
 	"github.com/sirupsen/logrus"
@@ -65,7 +68,6 @@ func TestOauth2(t *testing.T) {
 			RedirectURL: "http://" + skz.Address + "/idp/callback",
 			Scopes:      []string{"my scope"},
 		},
-		RefreshURL: "http://" + skz.Address + "/idp/refresh",
 	}, rpServer.URL))
 
 	client := new(http.Client)
@@ -78,10 +80,33 @@ func TestOauth2(t *testing.T) {
 	assert.True(t, strings.HasPrefix(resp.Request.URL.String(), rpServer.URL))
 	errMsg := resp.Request.URL.Query().Get("error")
 	assert.Equal(t, "", errMsg)
-	data := resp.Request.URL.Query().Get("data")
-	assert.NotEqual(t, "", data)
+	sealed := resp.Request.URL.Query().Get("data")
+	assert.NotEqual(t, "", sealed)
+	sexpires := resp.Request.URL.Query().Get("expires")
+	iexpires, err := strconv.ParseInt(sexpires, 10, 64)
+	assert.NoError(t, err)
+	expires := time.Unix(iexpires, 0)
+	assert.Equal(t, 3599, time.Until(expires)/time.Second)
 
-	tkzClient, err := tokenizer.Client(tkzServer.URL, tokenizer.WithAuth(rpAuth), tokenizer.WithSecret(data, nil))
+	tkzClient, err := tokenizer.Client(tkzServer.URL, tokenizer.WithAuth(rpAuth), tokenizer.WithSecret(sealed, nil))
+	assert.NoError(t, err)
+	resp, err = tkzClient.Get(idpServer.URL + "/api")
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	withRefresh := map[string]string{tokenizer.ParamSubtoken: tokenizer.SubtokenRefresh}
+	refreshClient, err := tokenizer.Client(tkzServer.URL, tokenizer.WithAuth(rpAuth), tokenizer.WithSecret(sealed, withRefresh))
+	assert.NoError(t, err)
+	resp, err = refreshClient.Get("http://" + skz.Address + "/idp/refresh")
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	bldr := new(strings.Builder)
+	_, err = io.Copy(bldr, resp.Body)
+	assert.NoError(t, err)
+	assert.Equal(t, "private, max-age=3599", resp.Header.Get("Cache-Control"))
+
+	sealed = bldr.String()
+	tkzClient, err = tokenizer.Client(tkzServer.URL, tokenizer.WithAuth(rpAuth), tokenizer.WithSecret(sealed, nil))
 	assert.NoError(t, err)
 	resp, err = tkzClient.Get(idpServer.URL + "/api")
 	assert.NoError(t, err)
@@ -155,10 +180,15 @@ var idp = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if r.Form.Get("code") != "111" {
+
+		switch {
+		case r.Form.Get("code") == "111":
+		case r.Form.Get("refresh_token") == "888":
+		default:
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"access_token": "999", "token_type": "Bearer", "refresh_token": "888", "expires_in": 3600}`))
 		return
