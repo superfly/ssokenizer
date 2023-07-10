@@ -1,26 +1,40 @@
 # public part of tokenizer's keypair
 seal_key: "$TOKENIZER_SEAL_KEY"
 
-# secret that RP will use to authenticate to tokenizer
+# secret that consuming app will use in `Proxy-Authorization` header with
+# tokenizer
 relying_party_auth: "$UIEX_SECRET_AUTH"
 
 http:
   # where ssokenizer should listen
   address: ":$PORT"
 
-  # where users can reach ssokenizer
-  url: $SSOKENIZER_URL
-
 identity_providers:
+  # Provider name. Users will go to
+  # https://<ssokenizer_url>/<provider_name>/start to begin flow
   google:
+
+    # amazon, bitbucket, facebook, github, gitlab, google, heroku, microsoft,
+    # or slack
     profile: google
+
+    # OAuth Client ID - received from identity provider
     client_id: "$GOOGLE_CLIENT_ID"
+
+    # OAuth Client Secret - received from identity provider
     client_secret: "$GOOGLE_CLIENT_SECRET"
+
+    # where user should be sent with sealed OAuth token after authenticating
     return_url: "$GOOGLE_RETURN_URL"
+
+    # OAuth scopes to request
     scopes:
       - openid
       - email
       - profile
+
+  # Same configuration except for return_url to allow authentication to staging
+  # environment with same OAuth client.
   google_staging:
     profile: google
     client_id: "$GOOGLE_CLIENT_ID"

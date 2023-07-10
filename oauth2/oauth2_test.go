@@ -58,6 +58,7 @@ func TestOauth2(t *testing.T) {
 	})
 
 	assert.NoError(t, skz.AddProvider("idp", Config{
+		Path: "/idp",
 		Config: oauth2.Config{
 			ClientID:     testClientID,
 			ClientSecret: testClientSecret,
@@ -65,8 +66,7 @@ func TestOauth2(t *testing.T) {
 				AuthURL:  idpServer.URL + "/auth",
 				TokenURL: idpServer.URL + "/token",
 			},
-			RedirectURL: "http://" + skz.Address + "/idp/callback",
-			Scopes:      []string{"my scope"},
+			Scopes: []string{"my scope"},
 		},
 	}, rpServer.URL))
 

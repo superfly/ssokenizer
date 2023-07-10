@@ -18,6 +18,9 @@ import (
 type Config struct {
 	oauth2.Config
 
+	// Path where this provider is mounted
+	Path string
+
 	// Request validators to add to the tokenizer secret. This allows limiting
 	// what hosts the secret can be used with.
 	RequestValidators []tokenizer.RequestValidator
@@ -36,18 +39,18 @@ func (c Config) Register(sealKey string, rpAuth string) (http.Handler, error) {
 	}
 
 	return &provider{
-		sealKey:           sealKey,
-		rpAuth:            rpAuth,
-		requestValidators: c.RequestValidators,
-		Config:            c,
+		sealKey:                  sealKey,
+		rpAuth:                   rpAuth,
+		requestValidators:        c.RequestValidators,
+		configWithoutRedirectURL: c,
 	}, nil
 }
 
 type provider struct {
-	sealKey           string
-	rpAuth            string
-	requestValidators []tokenizer.RequestValidator
-	Config
+	sealKey                  string
+	rpAuth                   string
+	requestValidators        []tokenizer.RequestValidator
+	configWithoutRedirectURL Config
 }
 
 const (
@@ -77,7 +80,7 @@ func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, p.AuthCodeURL(tr.Nonce, oauth2.AccessTypeOffline), http.StatusFound)
+	http.Redirect(w, r, p.config(r).AuthCodeURL(tr.Nonce, oauth2.AccessTypeOffline), http.StatusFound)
 }
 
 func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +118,7 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := p.Exchange(r.Context(), code, oauth2.AccessTypeOffline)
+	tok, err := p.config(r).Exchange(r.Context(), code, oauth2.AccessTypeOffline)
 	if err != nil {
 		logrus.WithError(err).Warn("failed exchange")
 		tr.ReturnError(w, r, "bad response")
@@ -140,7 +143,6 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tr.ReturnData(w, r, map[string]string{
-		"data":    sealed, // remove this
 		"sealed":  sealed,
 		"expires": strconv.FormatInt(tok.Expiry.Unix(), 10),
 	})
@@ -154,7 +156,7 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := p.TokenSource(r.Context(), &oauth2.Token{RefreshToken: refreshToken}).Token()
+	tok, err := p.config(r).TokenSource(r.Context(), &oauth2.Token{RefreshToken: refreshToken}).Token()
 	if err != nil {
 		logrus.WithError(err).Warn("refresh")
 		w.WriteHeader(http.StatusBadGateway)
@@ -187,4 +189,15 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		logrus.WithError(err).Warn("refresh: write response")
 		return
 	}
+}
+
+func (p *provider) config(r *http.Request) *Config {
+	scheme := "http://"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https://"
+	}
+	cfg := p.configWithoutRedirectURL
+	cfg.RedirectURL = scheme + r.Host + cfg.Path + callbackPath
+
+	return &cfg
 }

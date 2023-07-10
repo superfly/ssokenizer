@@ -94,9 +94,6 @@ func (c *Config) Validate() error {
 	if c.HTTP.Address == "" {
 		return errors.New("missing http.address")
 	}
-	if c.HTTP.URL == "" {
-		return errors.New("missing http.url")
-	}
 	for _, pc := range c.IdentityProviders {
 		if err := pc.Validate(c.ReturnURL == ""); err != nil {
 			return err
@@ -112,9 +109,6 @@ type LogConfig struct {
 type HTTPConfig struct {
 	// address for http server to listen on
 	Address string `yaml:"address"`
-
-	// url that ssokenizer can be reached at
-	URL string `yaml:"url"`
 }
 
 type IdentityProviderConfig struct {
@@ -134,70 +128,70 @@ type IdentityProviderConfig struct {
 	ReturnURL string `yaml:"return_url"`
 }
 
-func (c IdentityProviderConfig) providerConfig(baseURL, returnURL string) (ssokenizer.ProviderConfig, error) {
+func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokenizer.ProviderConfig, error) {
 	switch c.Profile {
 	case "amazon":
 		return amazon.Config{
 			ClientID:     c.ClientID,
 			ClientSecret: c.ClientSecret,
 			Scopes:       c.Scopes,
-			RedirectURL:  baseURL + "/callback",
+			Path:         "/" + name,
 		}, nil
 	case "bitbucket":
 		return bitbucket.Config{
 			ClientID:     c.ClientID,
 			ClientSecret: c.ClientSecret,
 			Scopes:       c.Scopes,
-			RedirectURL:  baseURL + "/callback",
+			Path:         "/" + name,
 		}, nil
 	case "facebook":
 		return facebook.Config{
 			ClientID:     c.ClientID,
 			ClientSecret: c.ClientSecret,
 			Scopes:       c.Scopes,
-			RedirectURL:  baseURL + "/callback",
+			Path:         "/" + name,
 		}, nil
 	case "github":
 		return github.Config{
 			ClientID:     c.ClientID,
 			ClientSecret: c.ClientSecret,
 			Scopes:       c.Scopes,
-			RedirectURL:  baseURL + "/callback",
+			Path:         "/" + name,
 		}, nil
 	case "gitlab":
 		return github.Config{
 			ClientID:     c.ClientID,
 			ClientSecret: c.ClientSecret,
 			Scopes:       c.Scopes,
-			RedirectURL:  baseURL + "/callback",
+			Path:         "/" + name,
 		}, nil
 	case "google":
 		return google.Config{
 			ClientID:     c.ClientID,
 			ClientSecret: c.ClientSecret,
 			Scopes:       c.Scopes,
-			RedirectURL:  baseURL + "/callback",
+			Path:         "/" + name,
 		}, nil
 	case "heroku":
 		return heroku.Config{
 			ClientID:     c.ClientID,
 			ClientSecret: c.ClientSecret,
 			Scopes:       c.Scopes,
-			RedirectURL:  baseURL + "/callback",
+			Path:         "/" + name,
 		}, nil
 	case "microsoft":
 		return microsoft.Config{
 			ClientID:     c.ClientID,
 			ClientSecret: c.ClientSecret,
 			Scopes:       c.Scopes,
-			RedirectURL:  baseURL + "/callback",
+			Path:         "/" + name,
 		}, nil
 	case "slack":
 		return slack.Config{
 			ClientID:     c.ClientID,
 			ClientSecret: c.ClientSecret,
 			Scopes:       c.Scopes,
-			RedirectURL:  baseURL + "/callback",
+			Path:         "/" + name,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown identity provider profile: %s", c.Profile)

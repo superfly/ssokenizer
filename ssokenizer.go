@@ -39,7 +39,7 @@ func NewServer(sealKey string, rpAuth string) *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	logrus.WithFields(logrus.Fields{"method": r.Method, "uri": r.URL.Path}).Info()
+	logrus.WithFields(logrus.Fields{"method": r.Method, "uri": r.URL.Path, "host": r.Host}).Info()
 
 	providerName, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	provider, ok := s.providers[providerName]

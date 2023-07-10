@@ -1,4 +1,3 @@
-app = "ssokenizer"
 kill_signal = "SIGTERM"
 kill_timeout = 5
 primary_region = "ord"

@@ -19,21 +19,20 @@ type Config struct {
 	// OAuth scopes to request
 	Scopes []string
 
-	// Where Amazon should return the user after consent-check
-	// (https://ssokenizer/<name>/callback)
-	RedirectURL string
+	// Path where this provider is mounted
+	Path string
 }
 
 var _ ssokenizer.ProviderConfig = Config{}
 
 func (c Config) Register(sealKey, rpAuth string) (http.Handler, error) {
 	return (&oauth2.Config{
+		Path: c.Path,
 		Config: xoauth2.Config{
 			ClientID:     c.ClientID,
 			ClientSecret: c.ClientSecret,
 			Scopes:       c.Scopes,
 			Endpoint:     amazon.Endpoint,
-			RedirectURL:  c.RedirectURL,
 		},
 	}).Register(sealKey, rpAuth)
 }

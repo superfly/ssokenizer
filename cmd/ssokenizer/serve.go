@@ -73,16 +73,14 @@ Arguments:
 	defer cancel()
 
 	server := ssokenizer.NewServer(c.Config.SealKey, c.Config.RelyingPartyAuth)
-	baseURL := strings.TrimSuffix(c.Config.HTTP.URL, "/")
 
 	for name, p := range c.Config.IdentityProviders {
-		providerBaseURL := baseURL + "/" + name
 		returnURL := p.ReturnURL
 		if returnURL == "" {
 			returnURL = strings.ReplaceAll(c.Config.ReturnURL, ":name", name)
 		}
 
-		pc, err := p.providerConfig(providerBaseURL, returnURL)
+		pc, err := p.providerConfig(name, returnURL)
 		if err != nil {
 			return err
 		}
