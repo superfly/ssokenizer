@@ -10,7 +10,14 @@ import (
 	"strings"
 
 	"github.com/superfly/ssokenizer"
+	"github.com/superfly/ssokenizer/amazon"
+	"github.com/superfly/ssokenizer/bitbucket"
+	"github.com/superfly/ssokenizer/facebook"
+	"github.com/superfly/ssokenizer/github"
 	"github.com/superfly/ssokenizer/google"
+	"github.com/superfly/ssokenizer/heroku"
+	"github.com/superfly/ssokenizer/microsoft"
+	"github.com/superfly/ssokenizer/slack"
 	"gopkg.in/yaml.v3"
 )
 
@@ -129,8 +136,64 @@ type IdentityProviderConfig struct {
 
 func (c IdentityProviderConfig) providerConfig(baseURL, returnURL string) (ssokenizer.ProviderConfig, error) {
 	switch c.Profile {
+	case "amazon":
+		return amazon.Config{
+			ClientID:     c.ClientID,
+			ClientSecret: c.ClientSecret,
+			Scopes:       c.Scopes,
+			RedirectURL:  baseURL + "/callback",
+		}, nil
+	case "bitbucket":
+		return bitbucket.Config{
+			ClientID:     c.ClientID,
+			ClientSecret: c.ClientSecret,
+			Scopes:       c.Scopes,
+			RedirectURL:  baseURL + "/callback",
+		}, nil
+	case "facebook":
+		return facebook.Config{
+			ClientID:     c.ClientID,
+			ClientSecret: c.ClientSecret,
+			Scopes:       c.Scopes,
+			RedirectURL:  baseURL + "/callback",
+		}, nil
+	case "github":
+		return github.Config{
+			ClientID:     c.ClientID,
+			ClientSecret: c.ClientSecret,
+			Scopes:       c.Scopes,
+			RedirectURL:  baseURL + "/callback",
+		}, nil
+	case "gitlab":
+		return github.Config{
+			ClientID:     c.ClientID,
+			ClientSecret: c.ClientSecret,
+			Scopes:       c.Scopes,
+			RedirectURL:  baseURL + "/callback",
+		}, nil
 	case "google":
 		return google.Config{
+			ClientID:     c.ClientID,
+			ClientSecret: c.ClientSecret,
+			Scopes:       c.Scopes,
+			RedirectURL:  baseURL + "/callback",
+		}, nil
+	case "heroku":
+		return heroku.Config{
+			ClientID:     c.ClientID,
+			ClientSecret: c.ClientSecret,
+			Scopes:       c.Scopes,
+			RedirectURL:  baseURL + "/callback",
+		}, nil
+	case "microsoft":
+		return microsoft.Config{
+			ClientID:     c.ClientID,
+			ClientSecret: c.ClientSecret,
+			Scopes:       c.Scopes,
+			RedirectURL:  baseURL + "/callback",
+		}, nil
+	case "slack":
+		return slack.Config{
 			ClientID:     c.ClientID,
 			ClientSecret: c.ClientSecret,
 			Scopes:       c.Scopes,
