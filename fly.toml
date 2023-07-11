@@ -21,3 +21,6 @@ processes = []
     method = "GET"
     timeout = "100ms"
     path = "/health"
+
+[env]
+  PORT = "8080"
