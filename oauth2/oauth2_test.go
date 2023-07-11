@@ -80,7 +80,7 @@ func TestOauth2(t *testing.T) {
 	assert.True(t, strings.HasPrefix(resp.Request.URL.String(), rpServer.URL))
 	errMsg := resp.Request.URL.Query().Get("error")
 	assert.Equal(t, "", errMsg)
-	sealed := resp.Request.URL.Query().Get("data")
+	sealed := resp.Request.URL.Query().Get("sealed")
 	assert.NotEqual(t, "", sealed)
 	sexpires := resp.Request.URL.Query().Get("expires")
 	iexpires, err := strconv.ParseInt(sexpires, 10, 64)

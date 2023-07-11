@@ -10,14 +10,17 @@ import (
 	"strings"
 
 	"github.com/superfly/ssokenizer"
-	"github.com/superfly/ssokenizer/amazon"
-	"github.com/superfly/ssokenizer/bitbucket"
-	"github.com/superfly/ssokenizer/facebook"
-	"github.com/superfly/ssokenizer/github"
-	"github.com/superfly/ssokenizer/google"
-	"github.com/superfly/ssokenizer/heroku"
-	"github.com/superfly/ssokenizer/microsoft"
-	"github.com/superfly/ssokenizer/slack"
+	"github.com/superfly/ssokenizer/oauth2"
+	xoauth2 "golang.org/x/oauth2"
+	"golang.org/x/oauth2/amazon"
+	"golang.org/x/oauth2/bitbucket"
+	"golang.org/x/oauth2/facebook"
+	"golang.org/x/oauth2/github"
+	"golang.org/x/oauth2/gitlab"
+	"golang.org/x/oauth2/google"
+	"golang.org/x/oauth2/heroku"
+	"golang.org/x/oauth2/microsoft"
+	"golang.org/x/oauth2/slack"
 	"gopkg.in/yaml.v3"
 )
 
@@ -131,67 +134,94 @@ type IdentityProviderConfig struct {
 func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokenizer.ProviderConfig, error) {
 	switch c.Profile {
 	case "amazon":
-		return amazon.Config{
-			ClientID:     c.ClientID,
-			ClientSecret: c.ClientSecret,
-			Scopes:       c.Scopes,
-			Path:         "/" + name,
+		return &oauth2.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+				Endpoint:     amazon.Endpoint,
+			},
 		}, nil
 	case "bitbucket":
-		return bitbucket.Config{
-			ClientID:     c.ClientID,
-			ClientSecret: c.ClientSecret,
-			Scopes:       c.Scopes,
-			Path:         "/" + name,
+		return &oauth2.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+				Endpoint:     bitbucket.Endpoint,
+			},
 		}, nil
 	case "facebook":
-		return facebook.Config{
-			ClientID:     c.ClientID,
-			ClientSecret: c.ClientSecret,
-			Scopes:       c.Scopes,
-			Path:         "/" + name,
+		return &oauth2.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+				Endpoint:     facebook.Endpoint,
+			},
 		}, nil
 	case "github":
-		return github.Config{
-			ClientID:     c.ClientID,
-			ClientSecret: c.ClientSecret,
-			Scopes:       c.Scopes,
-			Path:         "/" + name,
+		return &oauth2.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+				Endpoint:     github.Endpoint,
+			},
 		}, nil
 	case "gitlab":
-		return github.Config{
-			ClientID:     c.ClientID,
-			ClientSecret: c.ClientSecret,
-			Scopes:       c.Scopes,
-			Path:         "/" + name,
+		return &oauth2.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+				Endpoint:     gitlab.Endpoint,
+			},
 		}, nil
 	case "google":
-		return google.Config{
-			ClientID:     c.ClientID,
-			ClientSecret: c.ClientSecret,
-			Scopes:       c.Scopes,
-			Path:         "/" + name,
+		return &oauth2.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+				Endpoint:     google.Endpoint,
+			},
 		}, nil
 	case "heroku":
-		return heroku.Config{
-			ClientID:     c.ClientID,
-			ClientSecret: c.ClientSecret,
-			Scopes:       c.Scopes,
-			Path:         "/" + name,
+		return &oauth2.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+				Endpoint:     heroku.Endpoint,
+			},
 		}, nil
 	case "microsoft":
-		return microsoft.Config{
-			ClientID:     c.ClientID,
-			ClientSecret: c.ClientSecret,
-			Scopes:       c.Scopes,
-			Path:         "/" + name,
+		return &oauth2.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+				Endpoint:     microsoft.LiveConnectEndpoint,
+			},
 		}, nil
 	case "slack":
-		return slack.Config{
-			ClientID:     c.ClientID,
-			ClientSecret: c.ClientSecret,
-			Scopes:       c.Scopes,
-			Path:         "/" + name,
+		return &oauth2.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+				Endpoint:     slack.Endpoint,
+			},
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown identity provider profile: %s", c.Profile)
