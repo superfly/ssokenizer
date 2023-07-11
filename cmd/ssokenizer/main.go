@@ -184,7 +184,8 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 		}, nil
 	case "github":
 		return &oauth2.Config{
-			Path: "/" + name,
+			Path:               "/" + name,
+			AllowedHostPattern: `api\.github\.com`,
 			Config: xoauth2.Config{
 				ClientID:     c.ClientID,
 				ClientSecret: c.ClientSecret,
@@ -204,7 +205,8 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 		}, nil
 	case "google":
 		return &oauth2.Config{
-			Path: "/" + name,
+			Path:               "/" + name,
+			AllowedHostPattern: `.*\.googleapis.com`,
 			Config: xoauth2.Config{
 				ClientID:     c.ClientID,
 				ClientSecret: c.ClientSecret,
@@ -214,7 +216,8 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 		}, nil
 	case "heroku":
 		return &oauth2.Config{
-			Path: "/" + name,
+			Path:               "/" + name,
+			AllowedHostPattern: `api\.heroku\.com`,
 			Config: xoauth2.Config{
 				ClientID:     c.ClientID,
 				ClientSecret: c.ClientSecret,

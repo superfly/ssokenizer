@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -21,9 +22,9 @@ type Config struct {
 	// Path where this provider is mounted
 	Path string
 
-	// Request validators to add to the tokenizer secret. This allows limiting
-	// what hosts the secret can be used with.
-	RequestValidators []tokenizer.RequestValidator
+	// Regexp of hosts that oauth tokens are allowed to be used with. There is
+	// no need to anchor regexes.
+	AllowedHostPattern string
 }
 
 var _ ssokenizer.ProviderConfig = Config{}
@@ -41,7 +42,7 @@ func (c Config) Register(sealKey string, rpAuth string) (http.Handler, error) {
 	return &provider{
 		sealKey:                  sealKey,
 		rpAuth:                   rpAuth,
-		requestValidators:        c.RequestValidators,
+		AllowedHostPattern:       c.AllowedHostPattern,
 		configWithoutRedirectURL: c,
 	}, nil
 }
@@ -49,7 +50,7 @@ func (c Config) Register(sealKey string, rpAuth string) (http.Handler, error) {
 type provider struct {
 	sealKey                  string
 	rpAuth                   string
-	requestValidators        []tokenizer.RequestValidator
+	AllowedHostPattern       string
 	configWithoutRedirectURL Config
 }
 
@@ -132,7 +133,7 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 				AccessToken:  tok.AccessToken,
 				RefreshToken: tok.RefreshToken},
 		},
-		RequestValidators: p.requestValidators,
+		RequestValidators: p.requestValidators(r),
 	}
 
 	sealed, err := secret.Seal(p.sealKey)
@@ -171,7 +172,7 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 				RefreshToken: tok.RefreshToken,
 			},
 		},
-		RequestValidators: p.requestValidators,
+		RequestValidators: p.requestValidators(r),
 	}
 
 	sealed, err := secret.Seal(p.sealKey)
@@ -200,4 +201,14 @@ func (p *provider) config(r *http.Request) *Config {
 	cfg.RedirectURL = scheme + r.Host + cfg.Path + callbackPath
 
 	return &cfg
+}
+
+func (p *provider) requestValidators(r *http.Request) []tokenizer.RequestValidator {
+	if p.AllowedHostPattern == "" {
+		return nil
+	}
+	// clients need to be able to send refresh tokens to ssokenizer itself, so
+	// we add ourself to the allowed-host pattern.
+	re := regexp.MustCompile(fmt.Sprintf("^(%s|%s)$", regexp.QuoteMeta(r.Host), p.AllowedHostPattern))
+	return []tokenizer.RequestValidator{tokenizer.AllowHostPattern(re)}
 }
