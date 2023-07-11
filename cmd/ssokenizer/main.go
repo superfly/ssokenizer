@@ -69,7 +69,7 @@ type Config struct {
 	SealKey string `yaml:"seal_key"`
 
 	// Auth key to put on tokenizer secrets
-	RelyingPartyAuth string `yaml:"relying_party_auth"`
+	ProxyAuthorization string `yaml:"proxy_authorization"`
 
 	// Where to return user after auth dance. If present, the string `:name` is
 	// replaced with the provider name. Can also be specified per-provider.
@@ -88,8 +88,8 @@ func NewConfig() Config {
 
 // Validate returns an error if the config is invalid.
 func (c *Config) Validate() error {
-	if c.RelyingPartyAuth == "" {
-		return errors.New("missing relying_party_auth")
+	if c.ProxyAuthorization == "" {
+		return errors.New("missing proxy_authorization")
 	}
 	if c.SealKey == "" {
 		return errors.New("missing seal_key")
@@ -124,15 +124,34 @@ type IdentityProviderConfig struct {
 	// oauth client secret
 	ClientSecret string `yaml:"client_secret"`
 
-	// oauth scopes to request
+	// oauth scopes to request. Can be specified as a space-separated list of strings.
 	Scopes []string `yaml:"scopes"`
 
 	// Where to return user after auth dance. Can also be specified globally.
 	ReturnURL string `yaml:"return_url"`
+
+	// oauth authorization endpoint URL. Only needed for "oauth" profile
+	AuthURL string `yaml:"auth_url"`
+
+	// oauth token endpoint URL. Only needed for "oauth" profile
+	TokenURL string `yaml:"token_url"`
 }
 
 func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokenizer.ProviderConfig, error) {
 	switch c.Profile {
+	case "oauth":
+		return &oauth2.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+				Endpoint: xoauth2.Endpoint{
+					AuthURL:  c.AuthURL,
+					TokenURL: c.TokenURL,
+				},
+			},
+		}, nil
 	case "amazon":
 		return &oauth2.Config{
 			Path: "/" + name,

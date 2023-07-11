@@ -72,12 +72,13 @@ Arguments:
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	server := ssokenizer.NewServer(c.Config.SealKey, c.Config.RelyingPartyAuth)
+	server := ssokenizer.NewServer(c.Config.SealKey, c.Config.ProxyAuthorization)
 
 	for name, p := range c.Config.IdentityProviders {
 		returnURL := p.ReturnURL
 		if returnURL == "" {
 			returnURL = strings.ReplaceAll(c.Config.ReturnURL, ":name", name)
+			returnURL = strings.ReplaceAll(returnURL, ":profile", p.Profile)
 		}
 
 		pc, err := p.providerConfig(name, returnURL)

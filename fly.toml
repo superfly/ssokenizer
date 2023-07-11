@@ -1,6 +1,5 @@
 kill_signal = "SIGTERM"
 kill_timeout = 5
-primary_region = "ord"
 processes = []
 
 [experimental]
@@ -22,11 +21,3 @@ processes = []
     method = "GET"
     timeout = "100ms"
     path = "/health"
-
-[env]
-    TOKENIZER_SEAL_KEY = "3afdb665d93f741adc98a6cfecb36f1e02403a095e8efa921fd2321857011f42"
-    GOOGLE_RETURN_URL = "https://fly.io/app/auth/google/callback"
-    GOOGLE_STAGING_RETURN_URL = "https://flyio-ui-ex-staging.fly.dev/app/auth/google/callback"
-    SSOKENIZER_URL = "https://ssokenizer.fly.dev"
-    GOOGLE_CLIENT_ID = "106698048514-di2a38jchr0g73af1a99tjineng55iso.apps.googleusercontent.com"
-    PORT = "8080"
