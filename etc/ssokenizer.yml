@@ -7,7 +7,7 @@ proxy_authorization: "$PROXY_AUTH"
 
 http:
   # Where ssokenizer should listen
-  address: ":8080"
+  address: "127.0.0.1:8824"
 
 # Where users will be sent with the sealed token after the authenticating. The
 # string `:name` will be replaced with the provider name. The string `:profile`
@@ -38,6 +38,48 @@ identity_providers:
     # variables easier.
     scopes:
       - "$GOOGLE_SCOPES"
+      
+  github:
+    # amazon, bitbucket, facebook, github, gitlab, google, heroku, microsoft,
+    # slack, or oauth.
+    profile: github
+
+    # OAuth Client ID - received from identity provider
+    client_id: "$GITHUB_CLIENT_ID"
+
+    # OAuth Client Secret - received from identity provider
+    client_secret: "$GITHUB_CLIENT_SECRET"
+
+    # where user should be sent with sealed OAuth token after authenticating
+    return_url: "$GITHUB_RETURN_URL"
+
+    # OAuth scopes to request. Separate scopes with spaces to specify multiple
+    # scopes in the same line. This makes pulling them from environment
+    # variables easier.
+    scopes:
+      - "repo,user:email"
+
+  heroku:
+    # amazon, bitbucket, facebook, github, gitlab, google, heroku, microsoft,
+    # slack, or oauth.
+    profile: heroku
+
+    # OAuth Client ID - received from identity provider
+    client_id: "HEROKU_CLIENT_ID"
+
+    # OAuth Client Secret - received from identity provider
+    client_secret: "HEROKU_CLIENT_SECRET"
+
+    # where user should be sent with sealed OAuth token after authenticating
+    return_url: "HEROKU_RETURN_URL"
+
+    # OAuth scopes to request. Separate scopes with spaces to specify multiple
+    # scopes in the same line. This makes pulling them from environment
+    # variables easier.
+    scopes:
+      - "repo,user:email"
+
+
 
     # These fields only need to be specified when using a custom "oauth"
     # provider profile.
