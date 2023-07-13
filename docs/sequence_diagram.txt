@@ -2,13 +2,13 @@
 title SSO Flow
 
 participant user
-participant ui-ex
+participant my app
 participant tokenizer
 participant ssokenizer
 participant google
 
-user->ui-ex: GET /login/google
-ui-ex->user: 301 → https://ssokenizer/google/start
+user->my app: GET /login/google
+my app->user: 301 → https://ssokenizer/google/start
 user->ssokenizer: GET /google/start
 ssokenizer->user: 301 → https://google/auth?client_id=...
 user->google: GET /auth?client_id=xxx
@@ -18,19 +18,19 @@ user->ssokenizer:  GET /callback?code=111
 ssokenizer->google: POST /token\nw/code, client_id, client_secret
 google->ssokenizer: 200\n{access_token:222, refresh_token:333}
 ssokenizer->ssokenizer: seal({access_token:222, refresh_token:333})
-ssokenizer->user: 301 → https://ui-ex/callback?data=sealed-token
-user->ui-ex: GET /callback?data=sealed-token
-ui-ex->tokenizer: GET https://google/user\nw/sealed-token
+ssokenizer->user: 301 → https://my app/callback?data=sealed-token
+user->my app: GET /callback?data=sealed-token
+my app->tokenizer: GET https://google/user\nw/sealed-token
 tokenizer->tokenizer: open(sealed-token)
 tokenizer->google: GET /user\nw/access_token
 google->tokenizer: 200\n{user: ...}
-tokenizer->ui-ex: 200\n{user: ...}
-ui-ex->user: 200\nSet-Cookie: user=...
+tokenizer->my app: 200\n{user: ...}
+my app->user: 200\nSet-Cookie: user=...
 ==time passes. access_token expires==
-ui-ex->tokenizer:GET https://ssokenizer/google/refresh\nw/sealed-token
+my app->tokenizer:GET https://ssokenizer/google/refresh\nw/sealed-token
 tokenizer->tokenizer: open(sealed-token)
 tokenizer->ssokenizer: GET /google/refresh\nw/refresh_token
 ssokenizer->google: POST /token\nw/refresh_token,client_id,client_secret
 google->ssokenizer: 200\n{access_token:777, refresh_token:888}
 ssokenizer->ssokenizer: seal({access_token:777, refresh_token:888})
-ssokenizer->ui-ex: 200\nsealed_token
+ssokenizer->my app: 200\nsealed_token
