@@ -1,3 +1,4 @@
+primary_region = "ord"
 kill_signal = "SIGTERM"
 kill_timeout = 5
 processes = []
@@ -21,3 +22,6 @@ processes = []
     method = "GET"
     timeout = "100ms"
     path = "/health"
+
+[env]
+  PORT = "8080"

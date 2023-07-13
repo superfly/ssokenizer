@@ -16,7 +16,7 @@ Ssokenizer searches for a configuration file at `/etc/ssokenizer.yml`, but a pat
 - Follow the prompts, declining to deploy the new application.
 - Set secrets (`TOKENIZER_SEAL_KEY`, `PROXY_AUTH`, `<PROVIDER>_CLIENT_SECRET`) by running `fly secrets set --stage SECRET_NAME="SECRET_VALUE"`
 - Edit the configuration file in [`/etc/ssokenizer.yml`](/etc/ssokenizer.yml) to reflect the OAuth providers you would like to support. The secrets you set in the previous step will be available as environment variables in this configuration file.
-- Run `fly deploy`
+- Run `make deploy` or `fly deploy`
 
 ## Usage
 

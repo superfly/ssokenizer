@@ -7,7 +7,7 @@ proxy_authorization: "$PROXY_AUTH"
 
 http:
   # Where ssokenizer should listen
-  address: "127.0.0.1:8824"
+  address: ":$PORT"
 
 # Where users will be sent with the sealed token after the authenticating. The
 # string `:name` will be replaced with the provider name. The string `:profile`

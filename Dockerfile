@@ -6,8 +6,6 @@ COPY . .
 ARG SSOKENIZER_VERSION=
 ARG SSOKENIZER_COMMIT=
 
-ENV GOPRIVATE="github.com/superfly/*"
-
 RUN --mount=type=cache,target=/root/.cache/go-build \
 	--mount=type=cache,target=/go/pkg \
 	go build -ldflags "-X 'main.Version=${SSOKENIZER_VERSION}' -X 'main.Commit=${SSOKENIZER_COMMIT}'" -buildvcs=false -o /usr/local/bin/ssokenizer ./cmd/ssokenizer
