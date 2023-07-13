@@ -206,7 +206,7 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 	case "google":
 		return &oauth2.Config{
 			Path:               "/" + name,
-			AllowedHostPattern: `.*\.googleapis.com`,
+			AllowedHostPattern: `.*\.googleapis\.com`,
 			Config: xoauth2.Config{
 				ClientID:     c.ClientID,
 				ClientSecret: c.ClientSecret,
