@@ -40,44 +40,28 @@ identity_providers:
       - "$GOOGLE_SCOPES"
       
   github:
-    # amazon, bitbucket, facebook, github, gitlab, google, heroku, microsoft,
-    # slack, or oauth.
     profile: github
 
-    # OAuth Client ID - received from identity provider
     client_id: "$GITHUB_CLIENT_ID"
 
-    # OAuth Client Secret - received from identity provider
     client_secret: "$GITHUB_CLIENT_SECRET"
 
-    # where user should be sent with sealed OAuth token after authenticating
     return_url: "$GITHUB_RETURN_URL"
 
-    # OAuth scopes to request. Separate scopes with spaces to specify multiple
-    # scopes in the same line. This makes pulling them from environment
-    # variables easier.
     scopes:
-      - "repo,user:email"
+      - "$GITHUB_SCOPES"
 
   heroku:
-    # amazon, bitbucket, facebook, github, gitlab, google, heroku, microsoft,
-    # slack, or oauth.
     profile: heroku
 
-    # OAuth Client ID - received from identity provider
     client_id: "HEROKU_CLIENT_ID"
 
-    # OAuth Client Secret - received from identity provider
     client_secret: "HEROKU_CLIENT_SECRET"
 
-    # where user should be sent with sealed OAuth token after authenticating
     return_url: "HEROKU_RETURN_URL"
 
-    # OAuth scopes to request. Separate scopes with spaces to specify multiple
-    # scopes in the same line. This makes pulling them from environment
-    # variables easier.
     scopes:
-      - "repo,user:email"
+      - "$HEROKU_SCOPES"
 
 
 
