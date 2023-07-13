@@ -35,8 +35,6 @@ func (c Config) Register(sealKey string, rpAuth string) (http.Handler, error) {
 		return nil, errors.New("missing client_id")
 	case c.ClientSecret == "":
 		return nil, errors.New("missing client_secret")
-	case c.ClientSecret == "":
-		return nil, errors.New("missing refresh_url")
 	}
 
 	return &provider{
