@@ -126,6 +126,12 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if t := tok.Type(); t != "Bearer" {
+		logrus.WithField("type", t).Warn("unrecognized token type")
+		tr.ReturnError(w, r, "bad response")
+		return
+	}
+
 	secret := &tokenizer.Secret{
 		AuthConfig: tokenizer.NewBearerAuthConfig(p.rpAuth),
 		ProcessorConfig: &tokenizer.OAuthProcessorConfig{
@@ -161,6 +167,11 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logrus.WithError(err).Warn("refresh")
 		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
+	if t := tok.Type(); t != "Bearer" {
+		logrus.WithField("type", t).Warn("unrecognized token type")
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
