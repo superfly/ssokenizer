@@ -54,11 +54,11 @@ identity_providers:
   heroku:
     profile: heroku
 
-    client_id: "HEROKU_CLIENT_ID"
+    client_id: "$HEROKU_CLIENT_ID"
 
-    client_secret: "HEROKU_CLIENT_SECRET"
+    client_secret: "$HEROKU_CLIENT_SECRET"
 
-    return_url: "HEROKU_RETURN_URL"
+    return_url: "$HEROKU_RETURN_URL"
 
     scopes:
       - "$HEROKU_SCOPES"
