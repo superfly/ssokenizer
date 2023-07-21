@@ -12,16 +12,18 @@ processes = []
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 1
-  [http_service.concurrency]
-    type = "requests"
-    soft_limit = 10000
-    hard_limit = 10000
-  [http_service.checks]
-    grace_period = "5s"
-    interval = "30s"
-    method = "GET"
-    timeout = "100ms"
-    path = "/health"
+
+[http_service.concurrency]
+  type = "requests"
+  soft_limit = 10000
+  hard_limit = 10000
+
+[[http_service.checks]]
+  grace_period = "5s"
+  interval = "30s"
+  method = "GET"
+  timeout = "1s"
+  path = "/health"
 
 [env]
   PORT = "8080"

@@ -45,8 +45,24 @@ identity_providers:
     # auth_url: $PROVIDER_AUTH_URL
     # token_url: $PROVIDER_TOKEN_URL
 
-  # Same configuration except for name and return_url to allow authentication
-  # to staging environment with same OAuth client.
+  github:
+    profile: github
+    client_id: "$GITHUB_CLIENT_ID"
+    client_secret: "$GITHUB_CLIENT_SECRET"
+    return_url: "$GITHUB_RETURN_URL"
+    scopes:
+      - "$GITHUB_SCOPES"
+
+  heroku:
+    profile: heroku
+    client_id: "$HEROKU_CLIENT_ID"
+    client_secret: "$HEROKU_CLIENT_SECRET"
+    return_url: "$HEROKU_RETURN_URL"
+    scopes:
+      - "$HEROKU_SCOPES"
+
+  # Same configurations except for name and return_url to allow authentication
+  # to staging environments with same OAuth client.
   google_staging:
     profile: google
     client_id: "$GOOGLE_CLIENT_ID"
@@ -54,3 +70,43 @@ identity_providers:
     return_url: "$GOOGLE_STAGING_RETURN_URL"
     scopes:
       - "$GOOGLE_SCOPES"
+
+  google_staging_2:
+    profile: google
+    client_id: "$GOOGLE_CLIENT_ID"
+    client_secret: "$GOOGLE_CLIENT_SECRET"
+    return_url: "$GOOGLE_STAGING_2_RETURN_URL"
+    scopes:
+      - "$GOOGLE_SCOPES"
+
+  github_staging:
+    profile: github
+    client_id: "$GITHUB_CLIENT_ID"
+    client_secret: "$GITHUB_CLIENT_SECRET"
+    return_url: "$GITHUB_STAGING_RETURN_URL"
+    scopes:
+      - "$GITHUB_SCOPES"
+
+  github_staging_2:
+    profile: github
+    client_id: "$GITHUB_CLIENT_ID"
+    client_secret: "$GITHUB_CLIENT_SECRET"
+    return_url: "$GITHUB_STAGING_2_RETURN_URL"
+    scopes:
+      - "$GITHUB_SCOPES"
+
+  heroku_staging:
+    profile: heroku
+    client_id: "$HEROKU_CLIENT_ID"
+    client_secret: "$HEROKU_CLIENT_SECRET"
+    return_url: "$HEROKU_STAGING_RETURN_URL"
+    scopes:
+      - "$HEROKU_SCOPES"
+
+  heroku_staging_2:
+    profile: heroku
+    client_id: "$HEROKU_CLIENT_ID"
+    client_secret: "$HEROKU_CLIENT_SECRET"
+    return_url: "$HEROKU_STAGING_2_RETURN_URL"
+    scopes:
+      - "$HEROKU_SCOPES"
