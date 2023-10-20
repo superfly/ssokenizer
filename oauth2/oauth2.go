@@ -29,6 +29,7 @@ type Config struct {
 
 var _ ssokenizer.ProviderConfig = Config{}
 
+// implements ssokenizer.ProviderConfig
 func (c Config) Register(sealKey string, rpAuth string) (http.Handler, error) {
 	switch {
 	case c.ClientID == "":
@@ -72,24 +73,12 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
-	tr, ok := ssokenizer.GetTransaction(r)
-	if !ok {
-		logrus.Warn("no transaction for request")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
+	tr := ssokenizer.GetTransaction(r)
 	http.Redirect(w, r, p.config(r).AuthCodeURL(tr.Nonce, oauth2.AccessTypeOffline), http.StatusFound)
 }
 
 func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
-	tr, ok := ssokenizer.GetTransaction(r)
-	if !ok {
-		logrus.Warn("no transaction for request")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
+	tr := ssokenizer.GetTransaction(r)
 	params := r.URL.Query()
 
 	if errParam := params.Get("error"); errParam != "" {

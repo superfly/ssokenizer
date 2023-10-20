@@ -15,13 +15,10 @@ func withTransaction(ctx context.Context, t *Transaction) context.Context {
 	return context.WithValue(ctx, contextKeyTransaction, t)
 }
 
-func GetTransaction(r *http.Request) (*Transaction, bool) {
+func GetTransaction(r *http.Request) *Transaction {
 	return transactionFromContext(r.Context())
 }
 
-func transactionFromContext(ctx context.Context) (*Transaction, bool) {
-	if t, ok := ctx.Value(contextKeyTransaction).(*Transaction); ok {
-		return t, true
-	}
-	return nil, false
+func transactionFromContext(ctx context.Context) *Transaction {
+	return ctx.Value(contextKeyTransaction).(*Transaction)
 }

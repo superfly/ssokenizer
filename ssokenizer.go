@@ -24,6 +24,10 @@ type Server struct {
 	http      *http.Server
 }
 
+// Returns a new Server. When a user successfully completes SSO, the sealKey is
+// used to encrypt the resulting token for use with tokenizer. The rpAuth is
+// set as the authentication token for the tokenizer sealed token and must be
+// provided to tokenizer by the relying party in order to use the sealed token.
 func NewServer(sealKey string, rpAuth string) *Server {
 	s := &Server{
 		sealKey: sealKey,
@@ -49,10 +53,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	t := &Transaction{
+		// these initial values will be replaced if the user has a cookie
 		ReturnState: r.URL.Query().Get("state"),
 		Nonce:       randHex(16),
 		Expiry:      time.Now().Add(transactionTTL),
 
+		// these values will be kept even if we find a cookie (marshalling
+		// and unmarshalling doesn't act on private struct fields).
 		returnURL:  provider.returnURL,
 		cookiePath: "/" + providerName,
 	}
@@ -85,6 +92,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	provider.handler.ServeHTTP(w, r)
 }
 
+// Configure the server with an SSO provider. The name dictates the path that
+// the provider's routes are served under. The returnURL is where the user is
+// returned after an SSO transaction completes.
 func (s *Server) AddProvider(name string, pc ProviderConfig, returnURL string) error {
 	if _, dup := s.providers[name]; dup {
 		return fmt.Errorf("duplicate provider: %s", name)
@@ -105,6 +115,8 @@ func (s *Server) AddProvider(name string, pc ProviderConfig, returnURL string) e
 	return nil
 }
 
+// Start the server in a goroutine, listening at the specified address
+// (host:port).
 func (s *Server) Start(address string) error {
 	l, err := net.Listen("tcp", address)
 	if err != nil {
@@ -123,6 +135,8 @@ func (s *Server) Start(address string) error {
 	return nil
 }
 
+// Gracefully shut down the server. If the context is cancelled before the
+// shutdown completes, the server will be shutdown immediately.
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
