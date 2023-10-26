@@ -88,9 +88,6 @@ func NewConfig() Config {
 
 // Validate returns an error if the config is invalid.
 func (c *Config) Validate() error {
-	if c.ProxyAuthorization == "" {
-		return errors.New("missing proxy_authorization")
-	}
 	if c.SealKey == "" {
 		return errors.New("missing seal_key")
 	}
@@ -98,7 +95,7 @@ func (c *Config) Validate() error {
 		return errors.New("missing http.address")
 	}
 	for _, pc := range c.IdentityProviders {
-		if err := pc.Validate(c.ReturnURL == ""); err != nil {
+		if err := pc.Validate(c.ReturnURL == "", c.ProxyAuthorization == ""); err != nil {
 			return err
 		}
 	}
@@ -135,6 +132,9 @@ type IdentityProviderConfig struct {
 
 	// oauth token endpoint URL. Only needed for "oauth" profile
 	TokenURL string `yaml:"token_url"`
+
+	// Auth key to put on tokenizer secrets
+	ProxyAuthorization string `yaml:"proxy_authorization"`
 }
 
 func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokenizer.ProviderConfig, error) {
@@ -250,12 +250,15 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 	}
 }
 
-func (c IdentityProviderConfig) Validate(needsReturnURL bool) error {
+func (c IdentityProviderConfig) Validate(needsReturnURL, needsProxyAuthorization bool) error {
 	if c.Profile == "" {
 		return errors.New("missing identity_providers.profile")
 	}
 	if c.ReturnURL == "" && needsReturnURL {
 		return errors.New("missing return_url or identity_providers.return_url")
+	}
+	if c.ProxyAuthorization == "" && needsProxyAuthorization {
+		return errors.New("missing proxy_authorization or identity_providers.proxy_authorization")
 	}
 
 	return nil

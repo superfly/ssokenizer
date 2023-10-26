@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/superfly/tokenizer"
 )
 
 type Server struct {
@@ -18,7 +19,6 @@ type Server struct {
 	Err     error
 
 	sealKey string
-	rpAuth  string
 
 	providers map[string]*provider
 	http      *http.Server
@@ -28,10 +28,9 @@ type Server struct {
 // used to encrypt the resulting token for use with tokenizer. The rpAuth is
 // set as the authentication token for the tokenizer sealed token and must be
 // provided to tokenizer by the relying party in order to use the sealed token.
-func NewServer(sealKey string, rpAuth string) *Server {
+func NewServer(sealKey string) *Server {
 	s := &Server{
 		sealKey: sealKey,
-		rpAuth:  rpAuth,
 		providers: map[string](*provider){
 			"health": &provider{handler: handleHealth},
 		},
@@ -51,17 +50,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+	r = withProvider(r, provider)
 
 	t := &Transaction{
-		// these initial values will be replaced if the user has a cookie
 		ReturnState: r.URL.Query().Get("state"),
 		Nonce:       randHex(16),
 		Expiry:      time.Now().Add(transactionTTL),
-
-		// these values will be kept even if we find a cookie (marshalling
-		// and unmarshalling doesn't act on private struct fields).
-		returnURL:  provider.returnURL,
-		cookiePath: "/" + providerName,
 	}
 
 	if tc, err := r.Cookie(transactionCookieName); err != http.ErrNoCookie && tc.Value != "" {
@@ -86,7 +80,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	t.setCookie(w, r, ts)
-	r = r.WithContext(withTransaction(r.Context(), t))
+	r = withTransaction(r, t)
 	r.URL.Path = "/" + rest
 
 	provider.handler.ServeHTTP(w, r)
@@ -95,12 +89,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Configure the server with an SSO provider. The name dictates the path that
 // the provider's routes are served under. The returnURL is where the user is
 // returned after an SSO transaction completes.
-func (s *Server) AddProvider(name string, pc ProviderConfig, returnURL string) error {
+func (s *Server) AddProvider(name string, pc ProviderConfig, returnURL string, auth tokenizer.AuthConfig) error {
 	if _, dup := s.providers[name]; dup {
 		return fmt.Errorf("duplicate provider: %s", name)
 	}
 
-	p, err := pc.Register(s.sealKey, s.rpAuth)
+	p, err := pc.Register(s.sealKey, auth)
 	if err != nil {
 		return err
 	}
@@ -110,7 +104,11 @@ func (s *Server) AddProvider(name string, pc ProviderConfig, returnURL string) e
 		return err
 	}
 
-	s.providers[name] = &provider{handler: p, returnURL: ru}
+	s.providers[name] = &provider{
+		name:      name,
+		handler:   p,
+		returnURL: ru,
+	}
 
 	return nil
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -30,12 +29,6 @@ type Transaction struct {
 
 	// Time after which this transaction cookie will be ignored.
 	Expiry time.Time
-
-	// Where the user should be returned at the completion of the transaction.
-	returnURL *url.URL
-
-	// The path that the transaction cookie should be set on.
-	cookiePath string
 }
 
 // Return the user to the returnURL with the provided data set as query string
@@ -53,7 +46,7 @@ func (t *Transaction) ReturnError(w http.ResponseWriter, r *http.Request, msg st
 func (t *Transaction) returnData(w http.ResponseWriter, r *http.Request, data map[string]string) {
 	t.setCookie(w, r, "")
 
-	returnURL := *t.returnURL
+	returnURL := getProvider(r).returnURL
 	q := returnURL.Query()
 
 	for k, v := range data {
@@ -87,6 +80,7 @@ func (t *Transaction) marshal() (string, error) {
 }
 
 func (t *Transaction) setCookie(w http.ResponseWriter, r *http.Request, v string) {
+	providerName := getProvider(r).name
 	tls := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 
 	var maxAge int
@@ -97,7 +91,7 @@ func (t *Transaction) setCookie(w http.ResponseWriter, r *http.Request, v string
 	http.SetCookie(w, &http.Cookie{
 		Name:     transactionCookieName,
 		Value:    v,
-		Path:     t.cookiePath,
+		Path:     "/" + providerName,
 		Secure:   tls,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,

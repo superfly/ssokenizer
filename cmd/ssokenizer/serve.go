@@ -12,6 +12,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/superfly/ssokenizer"
+	"github.com/superfly/tokenizer"
 )
 
 const gracefulShutdownTimeout = 5 * time.Second
@@ -72,7 +73,7 @@ Arguments:
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	server := ssokenizer.NewServer(c.Config.SealKey, c.Config.ProxyAuthorization)
+	server := ssokenizer.NewServer(c.Config.SealKey)
 
 	for name, p := range c.Config.IdentityProviders {
 		returnURL := p.ReturnURL
@@ -81,11 +82,17 @@ Arguments:
 			returnURL = strings.ReplaceAll(returnURL, ":profile", p.Profile)
 		}
 
+		proxyAuthorization := p.ProxyAuthorization
+		if proxyAuthorization == "" {
+			proxyAuthorization = c.Config.ProxyAuthorization
+		}
+		authConfig := tokenizer.NewBearerAuthConfig(proxyAuthorization)
+
 		pc, err := p.providerConfig(name, returnURL)
 		if err != nil {
 			return err
 		}
-		server.AddProvider(name, pc, returnURL)
+		server.AddProvider(name, pc, returnURL, authConfig)
 	}
 
 	if err := server.Start(c.Config.HTTP.Address); err != nil {

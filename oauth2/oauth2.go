@@ -30,7 +30,7 @@ type Config struct {
 var _ ssokenizer.ProviderConfig = Config{}
 
 // implements ssokenizer.ProviderConfig
-func (c Config) Register(sealKey string, rpAuth string) (http.Handler, error) {
+func (c Config) Register(sealKey string, auth tokenizer.AuthConfig) (http.Handler, error) {
 	switch {
 	case c.ClientID == "":
 		return nil, errors.New("missing client_id")
@@ -40,7 +40,7 @@ func (c Config) Register(sealKey string, rpAuth string) (http.Handler, error) {
 
 	return &provider{
 		sealKey:                  sealKey,
-		rpAuth:                   rpAuth,
+		auth:                     auth,
 		AllowedHostPattern:       c.AllowedHostPattern,
 		configWithoutRedirectURL: c,
 	}, nil
@@ -48,7 +48,7 @@ func (c Config) Register(sealKey string, rpAuth string) (http.Handler, error) {
 
 type provider struct {
 	sealKey                  string
-	rpAuth                   string
+	auth                     tokenizer.AuthConfig
 	AllowedHostPattern       string
 	configWithoutRedirectURL Config
 }
@@ -120,7 +120,7 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	secret := &tokenizer.Secret{
-		AuthConfig: tokenizer.NewBearerAuthConfig(p.rpAuth),
+		AuthConfig: p.auth,
 		ProcessorConfig: &tokenizer.OAuthProcessorConfig{
 			Token: &tokenizer.OAuthToken{
 				AccessToken:  tok.AccessToken,
@@ -163,7 +163,7 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	secret := &tokenizer.Secret{
-		AuthConfig: tokenizer.NewBearerAuthConfig(p.rpAuth),
+		AuthConfig: p.auth,
 		ProcessorConfig: &tokenizer.OAuthProcessorConfig{
 			Token: &tokenizer.OAuthToken{
 				AccessToken:  tok.AccessToken,
