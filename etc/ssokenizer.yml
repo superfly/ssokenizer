@@ -1,10 +1,6 @@
 # Public part of tokenizer's keypair
 seal_key: "$TOKENIZER_SEAL_KEY"
 
-# Apps using sealed secrets with tokenizer will put this token in the
-# `Proxy-Authorization` header.
-proxy_authorization: "$PROXY_AUTH"
-
 http:
   # Where ssokenizer should listen
   address: ":$PORT"
@@ -20,6 +16,11 @@ identity_providers:
   # `google` here is the provider name. Users will go to
   # https://<ssokenizer_url>/<provider_name>/start to start the oauth dance
   google:
+    # Apps using sealed secrets with tokenizer will put this token in the
+    # `Proxy-Authorization` header.
+    secret_auth:
+      bearer: "$PROXY_AUTH"
+
     # amazon, bitbucket, facebook, github, gitlab, google, heroku, microsoft,
     # slack, or oauth.
     profile: google
@@ -46,6 +47,8 @@ identity_providers:
     # token_url: $PROVIDER_TOKEN_URL
 
   github:
+    secret_auth:
+      bearer: "$PROXY_AUTH"
     profile: github
     client_id: "$GITHUB_CLIENT_ID"
     client_secret: "$GITHUB_CLIENT_SECRET"
@@ -54,6 +57,8 @@ identity_providers:
       - "$GITHUB_SCOPES"
 
   heroku:
+    secret_auth:
+      bearer: "$PROXY_AUTH"
     profile: heroku
     client_id: "$HEROKU_CLIENT_ID"
     client_secret: "$HEROKU_CLIENT_SECRET"
@@ -64,6 +69,8 @@ identity_providers:
   # Same configurations except for name and return_url to allow authentication
   # to staging environments with same OAuth client.
   google_staging:
+    secret_auth:
+      bearer: "$PROXY_AUTH"
     profile: google
     client_id: "$GOOGLE_CLIENT_ID"
     client_secret: "$GOOGLE_CLIENT_SECRET"
@@ -72,6 +79,8 @@ identity_providers:
       - "$GOOGLE_SCOPES"
 
   google_staging_2:
+    secret_auth:
+      bearer: "$PROXY_AUTH"
     profile: google
     client_id: "$GOOGLE_CLIENT_ID"
     client_secret: "$GOOGLE_CLIENT_SECRET"
@@ -80,6 +89,8 @@ identity_providers:
       - "$GOOGLE_SCOPES"
 
   github_staging:
+    secret_auth:
+      bearer: "$PROXY_AUTH"
     profile: github
     client_id: "$GITHUB_CLIENT_ID"
     client_secret: "$GITHUB_CLIENT_SECRET"
@@ -88,6 +99,8 @@ identity_providers:
       - "$GITHUB_SCOPES"
 
   github_staging_2:
+    secret_auth:
+      bearer: "$PROXY_AUTH"
     profile: github
     client_id: "$GITHUB_CLIENT_ID"
     client_secret: "$GITHUB_CLIENT_SECRET"
@@ -96,6 +109,8 @@ identity_providers:
       - "$GITHUB_SCOPES"
 
   heroku_staging:
+    secret_auth:
+      bearer: "$PROXY_AUTH"
     profile: heroku
     client_id: "$HEROKU_CLIENT_ID"
     client_secret: "$HEROKU_CLIENT_SECRET"
@@ -104,6 +119,8 @@ identity_providers:
       - "$HEROKU_SCOPES"
 
   heroku_staging_2:
+    secret_auth:
+      bearer: "$PROXY_AUTH"
     profile: heroku
     client_id: "$HEROKU_CLIENT_ID"
     client_secret: "$HEROKU_CLIENT_SECRET"
