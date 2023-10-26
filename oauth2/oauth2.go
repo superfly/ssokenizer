@@ -29,7 +29,8 @@ type Config struct {
 
 var _ ssokenizer.ProviderConfig = Config{}
 
-func (c Config) Register(sealKey string, rpAuth string) (http.Handler, error) {
+// implements ssokenizer.ProviderConfig
+func (c Config) Register(sealKey string, auth tokenizer.AuthConfig) (http.Handler, error) {
 	switch {
 	case c.ClientID == "":
 		return nil, errors.New("missing client_id")
@@ -39,7 +40,7 @@ func (c Config) Register(sealKey string, rpAuth string) (http.Handler, error) {
 
 	return &provider{
 		sealKey:                  sealKey,
-		rpAuth:                   rpAuth,
+		auth:                     auth,
 		AllowedHostPattern:       c.AllowedHostPattern,
 		configWithoutRedirectURL: c,
 	}, nil
@@ -47,7 +48,7 @@ func (c Config) Register(sealKey string, rpAuth string) (http.Handler, error) {
 
 type provider struct {
 	sealKey                  string
-	rpAuth                   string
+	auth                     tokenizer.AuthConfig
 	AllowedHostPattern       string
 	configWithoutRedirectURL Config
 }
@@ -72,24 +73,12 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
-	tr, ok := ssokenizer.GetTransaction(r)
-	if !ok {
-		logrus.Warn("no transaction for request")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
+	tr := ssokenizer.GetTransaction(r)
 	http.Redirect(w, r, p.config(r).AuthCodeURL(tr.Nonce, oauth2.AccessTypeOffline), http.StatusFound)
 }
 
 func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
-	tr, ok := ssokenizer.GetTransaction(r)
-	if !ok {
-		logrus.Warn("no transaction for request")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
+	tr := ssokenizer.GetTransaction(r)
 	params := r.URL.Query()
 
 	if errParam := params.Get("error"); errParam != "" {
@@ -131,7 +120,7 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	secret := &tokenizer.Secret{
-		AuthConfig: tokenizer.NewBearerAuthConfig(p.rpAuth),
+		AuthConfig: p.auth,
 		ProcessorConfig: &tokenizer.OAuthProcessorConfig{
 			Token: &tokenizer.OAuthToken{
 				AccessToken:  tok.AccessToken,
@@ -174,7 +163,7 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	secret := &tokenizer.Secret{
-		AuthConfig: tokenizer.NewBearerAuthConfig(p.rpAuth),
+		AuthConfig: p.auth,
 		ProcessorConfig: &tokenizer.OAuthProcessorConfig{
 			Token: &tokenizer.OAuthToken{
 				AccessToken:  tok.AccessToken,

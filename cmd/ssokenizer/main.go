@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/superfly/ssokenizer"
 	"github.com/superfly/ssokenizer/oauth2"
+	"github.com/superfly/tokenizer"
 	xoauth2 "golang.org/x/oauth2"
 	"golang.org/x/oauth2/amazon"
 	"golang.org/x/oauth2/bitbucket"
@@ -68,16 +70,43 @@ type Config struct {
 	// Tokenizer seal (public) key
 	SealKey string `yaml:"seal_key"`
 
-	// Auth key to put on tokenizer secrets
-	ProxyAuthorization string `yaml:"proxy_authorization"`
-
 	// Where to return user after auth dance. If present, the string `:name` is
 	// replaced with the provider name. Can also be specified per-provider.
 	ReturnURL string `yaml:"return_url"`
 
+	SecretAuth        SecretAuthConfig                  `yaml:"secret_auth"`
 	Log               LogConfig                         `yaml:"log"`
 	HTTP              HTTPConfig                        `yaml:"http"`
 	IdentityProviders map[string]IdentityProviderConfig `yaml:"identity_providers"`
+}
+
+// Specifies what authentication clients should be required to present to
+// tokenizer in order to use sealed secrets.
+type SecretAuthConfig struct {
+	// The plain string that clients must pass in the Proxy-Authorization
+	// header.
+	Bearer string `yaml:"bearer"`
+
+	// Hex SHA256 digest of string that clients must pass in the
+	// Proxy-Authorization header.
+	BearerDigest string `yaml:"bearer_digest"`
+}
+
+func (c SecretAuthConfig) tokenizerAuthConfig() (tokenizer.AuthConfig, error) {
+	switch {
+	case c.Bearer != "" && c.BearerDigest != "":
+		return nil, errors.New("bearer and bearer_digest are mutually exclusive")
+	case c.Bearer != "":
+		return tokenizer.NewBearerAuthConfig(c.Bearer), nil
+	case c.BearerDigest != "":
+		d, err := hex.DecodeString(c.BearerDigest)
+		if err != nil {
+			return nil, err
+		}
+		return &tokenizer.BearerAuthConfig{Digest: d}, nil
+	default:
+		return nil, nil
+	}
 }
 
 // NewConfig returns a new instance of Config with defaults set.
@@ -88,9 +117,11 @@ func NewConfig() Config {
 
 // Validate returns an error if the config is invalid.
 func (c *Config) Validate() error {
-	if c.ProxyAuthorization == "" {
-		return errors.New("missing proxy_authorization")
+	tac, err := c.SecretAuth.tokenizerAuthConfig()
+	if err != nil {
+		return err
 	}
+
 	if c.SealKey == "" {
 		return errors.New("missing seal_key")
 	}
@@ -98,7 +129,7 @@ func (c *Config) Validate() error {
 		return errors.New("missing http.address")
 	}
 	for _, pc := range c.IdentityProviders {
-		if err := pc.Validate(c.ReturnURL == ""); err != nil {
+		if err := pc.Validate(c.ReturnURL == "", tac == nil); err != nil {
 			return err
 		}
 	}
@@ -135,6 +166,8 @@ type IdentityProviderConfig struct {
 
 	// oauth token endpoint URL. Only needed for "oauth" profile
 	TokenURL string `yaml:"token_url"`
+
+	SecretAuth SecretAuthConfig `yaml:"secret_auth"`
 }
 
 func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokenizer.ProviderConfig, error) {
@@ -250,12 +283,19 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 	}
 }
 
-func (c IdentityProviderConfig) Validate(needsReturnURL bool) error {
+func (c IdentityProviderConfig) Validate(needsReturnURL, needsProxyAuthorization bool) error {
 	if c.Profile == "" {
 		return errors.New("missing identity_providers.profile")
 	}
 	if c.ReturnURL == "" && needsReturnURL {
 		return errors.New("missing return_url or identity_providers.return_url")
+	}
+
+	switch tac, err := c.SecretAuth.tokenizerAuthConfig(); {
+	case err != nil:
+		return err
+	case tac == nil && needsProxyAuthorization:
+		return errors.New("missing secret_auth or identity_providers.secret_auth")
 	}
 
 	return nil

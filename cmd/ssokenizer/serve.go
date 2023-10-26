@@ -72,7 +72,8 @@ Arguments:
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	server := ssokenizer.NewServer(c.Config.SealKey, c.Config.ProxyAuthorization)
+	server := ssokenizer.NewServer(c.Config.SealKey)
+	serverTAC, _ := c.Config.SecretAuth.tokenizerAuthConfig()
 
 	for name, p := range c.Config.IdentityProviders {
 		returnURL := p.ReturnURL
@@ -81,11 +82,16 @@ Arguments:
 			returnURL = strings.ReplaceAll(returnURL, ":profile", p.Profile)
 		}
 
+		tac, _ := p.SecretAuth.tokenizerAuthConfig()
+		if tac == nil {
+			tac = serverTAC
+		}
+
 		pc, err := p.providerConfig(name, returnURL)
 		if err != nil {
 			return err
 		}
-		server.AddProvider(name, pc, returnURL)
+		server.AddProvider(name, pc, returnURL, tac)
 	}
 
 	if err := server.Start(c.Config.HTTP.Address); err != nil {

@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -16,18 +15,30 @@ const (
 	transactionTTL        = time.Hour
 )
 
+// State about the user's SSO attempt that is stored as a cookie. Cookies are
+// set with per-provider paths to prevent transactions from different providers
+// from interfering with each other.
 type Transaction struct {
+	// Random state string that will be returned in our redirect to the relying
+	//  party. This is used to prevent login-CSRF attacks.
 	ReturnState string
-	Nonce       string
-	Expiry      time.Time
-	returnURL   *url.URL
-	cookiePath  string
+
+	// Random string that provider implementations can use as the state
+	// parameter for downstream SSO flows.
+	Nonce string
+
+	// Time after which this transaction cookie will be ignored.
+	Expiry time.Time
 }
 
+// Return the user to the returnURL with the provided data set as query string
+// parameters.
 func (t *Transaction) ReturnData(w http.ResponseWriter, r *http.Request, data map[string]string) {
 	t.returnData(w, r, data)
 }
 
+// Return the user to the returnURL with the provided msg set in the `error`
+// query string parameter.
 func (t *Transaction) ReturnError(w http.ResponseWriter, r *http.Request, msg string) {
 	t.returnData(w, r, map[string]string{"error": msg})
 }
@@ -35,7 +46,7 @@ func (t *Transaction) ReturnError(w http.ResponseWriter, r *http.Request, msg st
 func (t *Transaction) returnData(w http.ResponseWriter, r *http.Request, data map[string]string) {
 	t.setCookie(w, r, "")
 
-	returnURL := *t.returnURL
+	returnURL := getProvider(r).returnURL
 	q := returnURL.Query()
 
 	for k, v := range data {
@@ -69,6 +80,7 @@ func (t *Transaction) marshal() (string, error) {
 }
 
 func (t *Transaction) setCookie(w http.ResponseWriter, r *http.Request, v string) {
+	providerName := getProvider(r).name
 	tls := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 
 	var maxAge int
@@ -79,7 +91,7 @@ func (t *Transaction) setCookie(w http.ResponseWriter, r *http.Request, v string
 	http.SetCookie(w, &http.Cookie{
 		Name:     transactionCookieName,
 		Value:    v,
-		Path:     t.cookiePath,
+		Path:     "/" + providerName,
 		Secure:   tls,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
