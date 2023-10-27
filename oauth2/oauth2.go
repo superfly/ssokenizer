@@ -78,7 +78,14 @@ func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 	defer getLog(r).WithField("status", http.StatusFound).Info()
 
 	tr := ssokenizer.GetTransaction(r)
-	http.Redirect(w, r, p.config(r).AuthCodeURL(tr.Nonce, oauth2.AccessTypeOffline), http.StatusFound)
+
+	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
+
+	if hd := r.URL.Query().Get("hd"); hd != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("hd", hd))
+	}
+
+	http.Redirect(w, r, p.config(r).AuthCodeURL(tr.Nonce, opts...), http.StatusFound)
 }
 
 func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
