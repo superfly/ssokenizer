@@ -44,6 +44,8 @@ func (t *Transaction) ReturnError(w http.ResponseWriter, r *http.Request, msg st
 }
 
 func (t *Transaction) returnData(w http.ResponseWriter, r *http.Request, data map[string]string) {
+	defer GetLog(r).WithField("status", http.StatusFound).Info()
+
 	t.setCookie(w, r, "")
 
 	returnURL := getProvider(r).returnURL

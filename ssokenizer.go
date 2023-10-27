@@ -2,6 +2,7 @@ package ssokenizer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -30,10 +31,8 @@ type Server struct {
 // provided to tokenizer by the relying party in order to use the sealed token.
 func NewServer(sealKey string) *Server {
 	s := &Server{
-		sealKey: sealKey,
-		providers: map[string](*provider){
-			"health": &provider{handler: handleHealth},
-		},
+		sealKey:   sealKey,
+		providers: make(map[string](*provider)),
 	}
 
 	s.http = &http.Server{Handler: s}
@@ -42,11 +41,17 @@ func NewServer(sealKey string) *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	logrus.WithFields(logrus.Fields{"method": r.Method, "uri": r.URL.Path, "host": r.Host}).Info()
-
 	providerName, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if providerName == "health" {
+		fmt.Fprintln(w, "ok")
+		return
+	}
+
+	r = WithFields(r, logrus.Fields{"method": r.Method, "uri": r.URL.Path, "host": r.Host})
+
 	provider, ok := s.providers[providerName]
 	if !ok {
+		GetLog(r).WithField("status", http.StatusNotFound).Info()
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -60,13 +65,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if tc, err := r.Cookie(transactionCookieName); err != http.ErrNoCookie && tc.Value != "" {
 		if err := unmarshalTransaction(t, tc.Value); err != nil {
-			logrus.WithError(err).Warn("bad transaction cookie")
+			r = WithError(r, fmt.Errorf("bad transaction cookie: %w", err))
 			t.ReturnError(w, r, "bad request")
 			return
 		}
 
 		if time.Now().After(t.Expiry) {
-			logrus.Warn("expired transaction")
+			r = WithError(r, errors.New("expired transaction"))
 			t.ReturnError(w, r, "expired")
 			return
 		}
@@ -74,7 +79,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	ts, err := t.marshal()
 	if err != nil {
-		logrus.WithError(err).Warn("marshal transaction cookie")
+		r = WithError(r, fmt.Errorf("marshal transaction cookie: %w", err))
 		t.ReturnError(w, r, "unexpected error")
 		return
 	}
@@ -138,5 +143,3 @@ func (s *Server) Start(address string) error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
-
-var handleHealth http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) }
