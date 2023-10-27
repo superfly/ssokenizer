@@ -10,7 +10,7 @@ import (
 type provider struct {
 	name      string
 	handler   http.Handler
-	returnURL *url.URL
+	returnURL url.URL
 }
 
 // Arbitrary configuration type for providers to implement.

@@ -107,7 +107,7 @@ func (s *Server) AddProvider(name string, pc ProviderConfig, returnURL string, a
 	s.providers[name] = &provider{
 		name:      name,
 		handler:   p,
-		returnURL: ru,
+		returnURL: *ru,
 	}
 
 	return nil
