@@ -146,4 +146,4 @@ identity_providers:
     client_secret: "$GITHUB_CLIENT_SECRET"
     return_url: "$GITHUB_AUTH_RETURN_URL"
     scopes:
-      - "$GITHUB_SCOPES"
+      - "$GITHUB_AUTH_SCOPES"
