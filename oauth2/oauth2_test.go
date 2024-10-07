@@ -26,9 +26,11 @@ func init() {
 	logrus.SetLevel(logrus.DebugLevel)
 }
 
-func TestOauth2(t *testing.T) {
+const rpAuth = "555"
+
+func setupTestServers(t *testing.T) (*httptest.Server, *ssokenizer.Server, *httptest.Server, *httptest.Server) {
 	rpServer := httptest.NewServer(rp)
-	defer rpServer.Close()
+	t.Cleanup(rpServer.Close)
 	t.Logf("rp=%s", rpServer.URL)
 
 	idpServer := httptest.NewServer(idp)
@@ -40,8 +42,6 @@ func TestOauth2(t *testing.T) {
 		sealKey      = hex.EncodeToString(pub[:])
 		openKey      = hex.EncodeToString(priv[:])
 	)
-
-	const rpAuth = "555"
 
 	tkz := tokenizer.NewTokenizer(openKey)
 	tkz.Tr = http.DefaultTransport.(*http.Transport) // disable TLS requirement for app server
@@ -69,15 +69,14 @@ func TestOauth2(t *testing.T) {
 			Scopes: []string{"my scope"},
 		},
 	}, rpServer.URL, tokenizer.NewBearerAuthConfig(rpAuth)))
+	return rpServer, skz, tkzServer, idpServer
+}
 
-	client := new(http.Client)
-	client.Jar, _ = cookiejar.New(nil)
-	client.Jar = noSecureJar{client.Jar}
-
-	resp, err := client.Get("http://" + skz.Address + "/idp/start")
-	assert.NoError(t, err)
+func checkResponse(t *testing.T, resp *http.Response, expectedPrefix, expectedState string) string {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.True(t, strings.HasPrefix(resp.Request.URL.String(), rpServer.URL))
+	assert.True(t, strings.HasPrefix(resp.Request.URL.String(), expectedPrefix))
+	state := resp.Request.URL.Query().Get("state")
+	assert.Equal(t, expectedState, state)
 	errMsg := resp.Request.URL.Query().Get("error")
 	assert.Equal(t, "", errMsg)
 	sealed := resp.Request.URL.Query().Get("sealed")
@@ -87,6 +86,19 @@ func TestOauth2(t *testing.T) {
 	assert.NoError(t, err)
 	expires := time.Unix(iexpires, 0)
 	assert.Equal(t, 3599, time.Until(expires)/time.Second)
+	return sealed
+}
+
+func TestOauth2(t *testing.T) {
+	rpServer, skz, tkzServer, idpServer := setupTestServers(t)
+
+	client := new(http.Client)
+	client.Jar, _ = cookiejar.New(nil)
+	client.Jar = noSecureJar{client.Jar}
+
+	resp, err := client.Get("http://" + skz.Address + "/idp/start")
+	assert.NoError(t, err)
+	sealed := checkResponse(t, resp, rpServer.URL, "")
 
 	tkzClient, err := tokenizer.Client(tkzServer.URL, tokenizer.WithAuth(rpAuth), tokenizer.WithSecret(sealed, nil))
 	assert.NoError(t, err)
@@ -111,6 +123,32 @@ func TestOauth2(t *testing.T) {
 	resp, err = tkzClient.Get(idpServer.URL + "/api")
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// tests that when two parallel flows are initiated, they do not interfere and the second can
+// complete successfully.
+func TestOauth2Parallel(t *testing.T) {
+	rpServer, skz, _, idpServer := setupTestServers(t)
+
+	sharedJar, _ := cookiejar.New(nil)
+
+	clientA := new(http.Client)
+	clientA.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if strings.HasPrefix(req.URL.String(), idpServer.URL) {
+			return nil // follow redirect to idp
+		}
+		return http.ErrUseLastResponse // don't follow redirect back from idp, simulating abandoned flow.
+	}
+	clientA.Jar = noSecureJar{sharedJar}
+	_, err := clientA.Get("http://" + skz.Address + "/idp/start?state=first")
+	assert.NoError(t, err)
+
+	clientB := new(http.Client)
+	clientB.Jar = noSecureJar{sharedJar}
+
+	resp, err := clientB.Get("http://" + skz.Address + "/idp/start?state=second")
+	assert.NoError(t, err)
+	checkResponse(t, resp, rpServer.URL, "second")
 }
 
 const (

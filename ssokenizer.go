@@ -2,13 +2,11 @@ package ssokenizer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/superfly/tokenizer"
@@ -56,36 +54,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = withProvider(r, provider)
-
-	t := &Transaction{
-		ReturnState: r.URL.Query().Get("state"),
-		Nonce:       randHex(16),
-		Expiry:      time.Now().Add(transactionTTL),
-	}
-
-	if tc, err := r.Cookie(transactionCookieName); err != http.ErrNoCookie && tc.Value != "" {
-		if err := unmarshalTransaction(t, tc.Value); err != nil {
-			r = WithError(r, fmt.Errorf("bad transaction cookie: %w", err))
-			t.ReturnError(w, r, "bad request")
-			return
-		}
-
-		if time.Now().After(t.Expiry) {
-			r = WithError(r, errors.New("expired transaction"))
-			t.ReturnError(w, r, "expired")
-			return
-		}
-	}
-
-	ts, err := t.marshal()
-	if err != nil {
-		r = WithError(r, fmt.Errorf("marshal transaction cookie: %w", err))
-		t.ReturnError(w, r, "unexpected error")
-		return
-	}
-
-	t.setCookie(w, r, ts)
-	r = withTransaction(r, t)
 	r.URL.Path = "/" + rest
 
 	provider.handler.ServeHTTP(w, r)
