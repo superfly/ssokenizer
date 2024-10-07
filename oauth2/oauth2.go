@@ -77,7 +77,10 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 	defer getLog(r).WithField("status", http.StatusFound).Info()
 
-	tr := ssokenizer.GetTransaction(r)
+	tr := ssokenizer.StartTransaction(w, r)
+	if tr == nil {
+		return
+	}
 
 	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
 
@@ -89,7 +92,10 @@ func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
-	tr := ssokenizer.GetTransaction(r)
+	tr := ssokenizer.RestoreTransaction(w, r)
+	if tr == nil {
+		return
+	}
 	params := r.URL.Query()
 
 	if errParam := params.Get("error"); errParam != "" {
