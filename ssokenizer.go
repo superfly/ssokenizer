@@ -2,6 +2,7 @@ package ssokenizer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -47,10 +48,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Println("#### With providername ", providerName)
 	r = WithFields(r, logrus.Fields{"method": r.Method, "uri": r.URL.Path, "host": r.Host})
 
 	provider, ok := s.providers[providerName]
+
 	if !ok {
+		fmt.Println("#### WTF NO MATCH ###")
+		b, err := json.MarshalIndent(s.providers, "", "  ")
+		if err != nil {
+			fmt.Println("error:", err)
+		}
+		fmt.Println("Valid providers: ", string(b))
+
 		GetLog(r).WithField("status", http.StatusNotFound).Info()
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -95,17 +105,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // the provider's routes are served under. The returnURL is where the user is
 // returned after an SSO transaction completes.
 func (s *Server) AddProvider(name string, pc ProviderConfig, returnURL string, auth tokenizer.AuthConfig) error {
+	fmt.Println("##### Gonna add provider ", name)
 	if _, dup := s.providers[name]; dup {
 		return fmt.Errorf("duplicate provider: %s", name)
 	}
 
 	p, err := pc.Register(s.sealKey, auth)
 	if err != nil {
+		fmt.Println("error:", err)
 		return err
 	}
 
 	ru, err := url.Parse(returnURL)
 	if err != nil {
+		fmt.Println("error:", err)
 		return err
 	}
 
@@ -114,7 +127,12 @@ func (s *Server) AddProvider(name string, pc ProviderConfig, returnURL string, a
 		handler:   p,
 		returnURL: *ru,
 	}
-
+	fmt.Println("##### Added provider ", name)
+	b, err := json.MarshalIndent(s.providers, "", "  ")
+	if err != nil {
+		fmt.Println("error:", err)
+	}
+	fmt.Println("##### Providers are now: ", string(b))
 	return nil
 }
 

@@ -147,3 +147,13 @@ identity_providers:
     return_url: "$GITHUB_AUTH_RETURN_URL"
     scopes:
       - "$GITHUB_AUTH_SCOPES"
+
+  vanta:
+    secret_auth:
+      bearer: "$PROXY_AUTH"
+    profile: vanta
+    client_id: "$VANTA_CLIENT_ID"
+    client_secret: "$VANTA_CLIENT_SECRET"
+    return_url: "$VANTA_RETURN_URL"
+    scopes:
+      - "$VANTA_AUTH_SCOPES"      

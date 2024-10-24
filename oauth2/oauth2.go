@@ -1,6 +1,7 @@
 package oauth2
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -16,6 +17,12 @@ import (
 	"github.com/superfly/ssokenizer"
 	"github.com/superfly/tokenizer"
 	"golang.org/x/oauth2"
+)
+
+type contextKey string
+
+const (
+	contextKeySourceId contextKey = "source_id"
 )
 
 type Config struct {
@@ -85,10 +92,28 @@ func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 		opts = append(opts, oauth2.SetAuthURLParam("hd", hd))
 	}
 
-	http.Redirect(w, r, p.config(r).AuthCodeURL(tr.Nonce, opts...), http.StatusFound)
+	// Allow passing in a org to be passed to Vanta as their source_id param
+	// (ref: https://developer.vanta.com/docs/oauth-flow).
+	// TODO: this might have weird side-effects and/or security implications
+	// and should be checked
+	if si := r.URL.Query().Get("si"); si != "" {
+		if state := r.URL.Query().Get("state"); state != "" {
+			if strings.Split(state, ":")[1] == si {
+				//fmt.Printf("Got si: %s and state %s\n", si, state)
+				r = r.WithContext(context.WithValue(r.Context(), contextKeySourceId, si))
+				opts = append(opts, oauth2.SetAuthURLParam("source_id", si))
+			}
+		}
+	}
+
+	url := p.config(r).AuthCodeURL(tr.Nonce, opts...)
+	http.Redirect(w, r, url, http.StatusFound)
 }
 
 func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
+
+	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
+
 	tr := ssokenizer.GetTransaction(r)
 	params := r.URL.Query()
 
@@ -99,10 +124,18 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := params.Get("state")
+
 	if state == "" {
 		r = withError(r, errors.New("missing state"))
 		tr.ReturnError(w, r, "bad response")
 		return
+	}
+
+	returnstate := tr.ReturnState
+	if strings.Contains(returnstate, ":") {
+		res := strings.Split(returnstate, ":")
+		opts = append(opts, oauth2.SetAuthURLParam("source_id", res[1]))
+
 	}
 
 	if subtle.ConstantTimeCompare([]byte(tr.Nonce), []byte(state)) != 1 {
@@ -119,7 +152,7 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := p.config(r).Exchange(r.Context(), code, oauth2.AccessTypeOffline)
+	tok, err := p.config(r).Exchange(r.Context(), code, opts...)
 	if err != nil {
 		r = withError(r, fmt.Errorf("failed exchange: %w", err))
 		tr.ReturnError(w, r, "bad response")
@@ -151,7 +184,6 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		tr.ReturnError(w, r, "seal error")
 		return
 	}
-
 	tr.ReturnData(w, r, map[string]string{
 		"sealed":  sealed,
 		"expires": strconv.FormatInt(tok.Expiry.Unix(), 10),
@@ -170,6 +202,7 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tok, err := p.config(r).TokenSource(r.Context(), &oauth2.Token{RefreshToken: refreshToken}).Token()
+
 	if err != nil {
 		getLog(r).
 			WithField("status", http.StatusBadGateway).
@@ -179,9 +212,7 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
-
 	r = withIdToken(r, tok)
-
 	if t := tok.Type(); t != "Bearer" {
 		getLog(r).
 			WithField("status", http.StatusInternalServerError).
@@ -213,7 +244,6 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", time.Until(tok.Expiry)/time.Second))
 

@@ -172,6 +172,20 @@ type IdentityProviderConfig struct {
 
 func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokenizer.ProviderConfig, error) {
 	switch c.Profile {
+	case "vanta":
+		return &oauth2.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+				Endpoint: xoauth2.Endpoint{
+					AuthURL:   "https://app.vanta.com/oauth/authorize",
+					TokenURL:  "https://api.vanta.com/oauth/token",
+					AuthStyle: 1, //AuthStyleInParams == 1
+				},
+			},
+		}, nil
 	case "oauth":
 		return &oauth2.Config{
 			Path: "/" + name,
