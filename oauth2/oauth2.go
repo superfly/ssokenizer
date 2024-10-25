@@ -1,6 +1,7 @@
 package oauth2
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/base64"
@@ -63,9 +64,10 @@ type provider struct {
 }
 
 const (
-	startPath    = "/start"
-	callbackPath = "/callback"
-	refreshPath  = "/refresh"
+	startPath      = "/start"
+	callbackPath   = "/callback"
+	refreshPath    = "/refresh"
+	invalidatePath = "/invalidate"
 )
 
 func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +78,8 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.handleCallback(w, r)
 	case refreshPath:
 		p.handleRefresh(w, r)
+	case invalidatePath:
+		p.handleInvalidate(w, r)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
@@ -99,7 +103,6 @@ func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 	if si := r.URL.Query().Get("si"); si != "" {
 		if state := r.URL.Query().Get("state"); state != "" {
 			if strings.Split(state, ":")[1] == si {
-				//fmt.Printf("Got si: %s and state %s\n", si, state)
 				r = r.WithContext(context.WithValue(r.Context(), contextKeySourceId, si))
 				opts = append(opts, oauth2.SetAuthURLParam("source_id", si))
 			}
@@ -259,6 +262,62 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	getLog(r).
 		WithField("status", http.StatusOK).
 		Info()
+}
+
+func (p *provider) handleInvalidate(w http.ResponseWriter, r *http.Request) {
+	tr := ssokenizer.GetTransaction(r)
+	accessToken, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+
+	if !ok {
+		r = withError(r, errors.New("missing token"))
+		tr.ReturnError(w, r, "bad response")
+		return
+	}
+
+	tok, err := p.config(r).TokenSource(r.Context(), &oauth2.Token{AccessToken: accessToken}).Token()
+	if err != nil {
+		r = withError(r, errors.New("token error"))
+		tr.ReturnError(w, r, "bad response")
+		return
+	}
+	r = withIdToken(r, tok)
+	if t := tok.Type(); t != "Bearer" {
+		r = withError(r, errors.New("unrecognized token type"))
+		tr.ReturnError(w, r, "bad response")
+		return
+	}
+
+	// HTTP endpoint
+	posturl := "https://api.vanta.com/v1/oauth/token/suspend"
+
+	bodyMap := make(map[string]string)
+	bodyMap["token"] = tok.AccessToken
+	bodyMap["client_id"] = p.config(r).ClientID
+	bodyMap["client_secret"] = p.config(r).ClientSecret
+	// JSON body
+	body, _ := json.Marshal(bodyMap)
+
+	req, err := http.NewRequest("POST", posturl, bytes.NewBuffer(body))
+	if err != nil {
+		r = withError(r, fmt.Errorf("invalidation error: %s", err))
+		tr.ReturnError(w, r, "bad response")
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	client := http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		r = withError(r, fmt.Errorf("invalidation error: %s", err))
+		tr.ReturnError(w, r, "bad response")
+		return
+	}
+
+	getLog(r).
+		WithField("status", resp.Status).
+		Info()
+
+	// Silently fall through to returning 200 OK
 }
 
 func (p *provider) config(r *http.Request) *Config {
