@@ -304,6 +304,10 @@ func (p *provider) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	client := http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
+
+	fmt.Printf("### POST: %+v\n", resp.Body)
+	fmt.Printf("### RESP: %+v\n", resp.StatusCode)
+
 	if err != nil {
 		r = withError(r, fmt.Errorf("invalidation error: %s", err))
 		tr.ReturnError(w, r, "bad response")
