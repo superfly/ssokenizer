@@ -7,6 +7,7 @@ app = 'ssokenizer-nameless-meadow-4136'
 primary_region = 'ord'
 kill_signal = 'SIGTERM'
 kill_timeout = '5s'
+processes = []
 
 [experimental]
   auto_rollback = true
