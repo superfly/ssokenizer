@@ -2,7 +2,6 @@ package oauth2
 
 import (
 	"bytes"
-	"context"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -20,11 +19,11 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type contextKey string
+// TODO type contextKey string
 
-const (
-	contextKeySourceId contextKey = "source_id"
-)
+//const (
+//	contextKeySourceId contextKey = "source_id"
+//)
 
 type Config struct {
 	oauth2.Config
@@ -99,13 +98,16 @@ func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 	// Allow passing in a org to be passed to Vanta as their source_id param
 	// (ref: https://developer.vanta.com/docs/oauth-flow).
 	// TODO: this might have weird side-effects and/or security implications
-	// and should be checked
+	// and should be checked. By keeping the source_id as part of the state
+	// for the whole round trip means both the state and the source_id can be
+	// checked on the client side for evidence of tampering
 	if si := r.URL.Query().Get("si"); si != "" {
 		if state := r.URL.Query().Get("state"); state != "" {
-			if strings.Split(state, ":")[1] == si {
-				r = r.WithContext(context.WithValue(r.Context(), contextKeySourceId, si))
-				opts = append(opts, oauth2.SetAuthURLParam("source_id", si))
-			}
+			r := regexp.MustCompile("^.*:(.*)$") // Capture text after the first :
+			matches := r.FindStringSubmatch(state)
+			if len(matches) > 1 && matches[1] != "" {
+				opts = append(opts, oauth2.SetAuthURLParam("source_id", matches[1]))
+			} // Pull out the source_id and stuff it into the params so that Vanta can see it
 		}
 	}
 
@@ -287,14 +289,13 @@ func (p *provider) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// HTTP endpoint
 	posturl := "https://api.vanta.com/v1/oauth/token/suspend"
 
 	bodyMap := make(map[string]string)
 	bodyMap["token"] = tok.AccessToken
 	bodyMap["client_id"] = p.config(r).ClientID
 	bodyMap["client_secret"] = p.config(r).ClientSecret
-	// JSON body
+
 	body, _ := json.Marshal(bodyMap)
 
 	req, err := http.NewRequest("POST", posturl, bytes.NewBuffer(body))
