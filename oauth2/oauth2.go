@@ -133,7 +133,9 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	returnstate := tr.ReturnState
 	if strings.Contains(returnstate, ":") {
 		res := strings.Split(returnstate, ":")
-		opts = append(opts, oauth2.SetAuthURLParam("source_id", res[1]))
+		if len(res) > 1 {
+			opts = append(opts, oauth2.SetAuthURLParam("source_id", res[1]))
+		}
 
 	}
 
