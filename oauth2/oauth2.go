@@ -19,12 +19,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// TODO type contextKey string
-
-//const (
-//	contextKeySourceId contextKey = "source_id"
-//)
-
 type Config struct {
 	oauth2.Config
 
