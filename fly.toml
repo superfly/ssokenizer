@@ -1,43 +1,28 @@
-# fly.toml app configuration file generated for ssokenizer-nameless-meadow-4136 on 2024-07-30T13:49:23-05:00
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
-
-app = 'ssokenizer-nameless-meadow-4136'
-primary_region = 'ord'
-kill_signal = 'SIGTERM'
-kill_timeout = '5s'
+primary_region = "ord"
+kill_signal = "SIGTERM"
+kill_timeout = 5
 processes = []
 
 [experimental]
   auto_rollback = true
 
-[build]
-
-[env]
-  PORT = '8080'
-  VANTA_CLIENT_ID = 'vci_6cc939d937d96c1cc9a34c1bb44e83220018c709fcf5d7f2'
-  VANTA_RETURN_URL = 'https://enabling-giraffe-regularly.ngrok-free.app/dashboard/vanta/callback'
-
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'off'
+  auto_stop_machines = false
   auto_start_machines = false
 
-  [http_service.concurrency]
-    type = 'requests'
-    hard_limit = 10000
-    soft_limit = 10000
+[http_service.concurrency]
+  type = "requests"
+  soft_limit = 10000
+  hard_limit = 10000
 
-  [[http_service.checks]]
-    interval = '30s'
-    timeout = '1s'
-    grace_period = '5s'
-    method = 'GET'
-    path = '/health'
+[[http_service.checks]]
+  grace_period = "5s"
+  interval = "30s"
+  method = "GET"
+  timeout = "1s"
+  path = "/health"
 
-[[vm]]
-  memory = '1gb'
-  cpu_kind = 'shared'
-  cpus = 1
+[env]
+  PORT = "8080"
