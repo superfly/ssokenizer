@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -61,6 +63,46 @@ func (t *Transaction) returnData(w http.ResponseWriter, r *http.Request, data ma
 
 	returnURL.RawQuery = q.Encode()
 	http.Redirect(w, r, returnURL.String(), http.StatusFound)
+}
+
+func StartTransaction(w http.ResponseWriter, r *http.Request) *Transaction {
+	t := &Transaction{
+		ReturnState: r.URL.Query().Get("state"),
+		Nonce:       randHex(16),
+		Expiry:      time.Now().Add(transactionTTL),
+	}
+
+	ts, err := t.marshal()
+	if err != nil {
+		r = WithError(r, fmt.Errorf("marshal transaction cookie: %w", err))
+		t.ReturnError(w, r, "unexpected error")
+		return nil
+	}
+
+	t.setCookie(w, r, ts)
+	return t
+}
+
+func RestoreTransaction(w http.ResponseWriter, r *http.Request) *Transaction {
+	t := &Transaction{
+		Nonce:  randHex(16),
+		Expiry: time.Now().Add(transactionTTL),
+	}
+
+	if tc, err := r.Cookie(transactionCookieName); err != http.ErrNoCookie && tc.Value != "" {
+		if err := unmarshalTransaction(t, tc.Value); err != nil {
+			r = WithError(r, fmt.Errorf("bad transaction cookie: %w", err))
+			t.ReturnError(w, r, "bad request")
+			return nil
+		}
+
+		if time.Now().After(t.Expiry) {
+			r = WithError(r, errors.New("expired transaction"))
+			t.ReturnError(w, r, "expired")
+			return nil
+		}
+	}
+	return t
 }
 
 func unmarshalTransaction(t *Transaction, s string) error {
