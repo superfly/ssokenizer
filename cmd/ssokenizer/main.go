@@ -12,6 +12,7 @@ import (
 
 	"github.com/superfly/ssokenizer"
 	"github.com/superfly/ssokenizer/oauth2"
+	"github.com/superfly/ssokenizer/vanta"
 	"github.com/superfly/tokenizer"
 	xoauth2 "golang.org/x/oauth2"
 	"golang.org/x/oauth2/amazon"
@@ -172,6 +173,21 @@ type IdentityProviderConfig struct {
 
 func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokenizer.ProviderConfig, error) {
 	switch c.Profile {
+	case "vanta":
+		return &vanta.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+				Endpoint: xoauth2.Endpoint{
+					AuthURL:   "https://app.vanta.com/oauth/authorize",
+					TokenURL:  "https://api.vanta.com/oauth/token",
+					AuthStyle: xoauth2.AuthStyleInParams,
+				},
+			},
+			ForwardParams: []string{"source_id"},
+		}, nil
 	case "oauth":
 		return &oauth2.Config{
 			Path: "/" + name,
@@ -246,6 +262,7 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 				Scopes:       c.Scopes,
 				Endpoint:     google.Endpoint,
 			},
+			ForwardParams: []string{"hd"},
 		}, nil
 	case "heroku":
 		return &oauth2.Config{

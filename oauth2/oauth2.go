@@ -27,6 +27,10 @@ type Config struct {
 	// Regexp of hosts that oauth tokens are allowed to be used with. There is
 	// no need to anchor regexes.
 	AllowedHostPattern string
+
+	// ForwardParams are the parameters that should be forwarded from the start
+	// request to the auth URL.
+	ForwardParams []string
 }
 
 var _ ssokenizer.ProviderConfig = Config{}
@@ -81,14 +85,18 @@ func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 	if tr == nil {
 		return
 	}
+	cfg := p.config(r)
 
 	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
 
-	if hd := r.URL.Query().Get("hd"); hd != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("hd", hd))
+	for _, param := range cfg.ForwardParams {
+		if value := r.URL.Query().Get(param); value != "" {
+			opts = append(opts, oauth2.SetAuthURLParam(param, value))
+		}
 	}
 
-	http.Redirect(w, r, p.config(r).AuthCodeURL(tr.Nonce, opts...), http.StatusFound)
+	url := cfg.AuthCodeURL(tr.Nonce, opts...)
+	http.Redirect(w, r, url, http.StatusFound)
 }
 
 func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
