@@ -12,6 +12,7 @@ import (
 
 	"github.com/superfly/ssokenizer"
 	"github.com/superfly/ssokenizer/oauth2"
+	"github.com/superfly/ssokenizer/vanta"
 	"github.com/superfly/tokenizer"
 	xoauth2 "golang.org/x/oauth2"
 	"golang.org/x/oauth2/amazon"
@@ -173,7 +174,7 @@ type IdentityProviderConfig struct {
 func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokenizer.ProviderConfig, error) {
 	switch c.Profile {
 	case "vanta":
-		return &oauth2.Config{
+		return &vanta.Config{
 			Path: "/" + name,
 			Config: xoauth2.Config{
 				ClientID:     c.ClientID,
@@ -182,7 +183,7 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 				Endpoint: xoauth2.Endpoint{
 					AuthURL:   "https://app.vanta.com/oauth/authorize",
 					TokenURL:  "https://api.vanta.com/oauth/token",
-					AuthStyle: 1, //AuthStyleInParams == 1
+					AuthStyle: xoauth2.AuthStyleInParams,
 				},
 			},
 			ForwardParams: []string{"source_id"},
