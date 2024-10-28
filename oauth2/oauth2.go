@@ -81,11 +81,11 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 	defer getLog(r).WithField("status", http.StatusFound).Info()
 
-
 	tr := ssokenizer.StartTransaction(w, r)
 	if tr == nil {
 		return
 	}
+	cfg := p.config(r)
 
 	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
 
