@@ -28,6 +28,10 @@ type Config struct {
 	// Regexp of hosts that oauth tokens are allowed to be used with. There is
 	// no need to anchor regexes.
 	AllowedHostPattern string
+
+	// ForwardParams are the parameters that should be forwarded from the start
+	// request to the auth URL.
+	ForwardParams []string
 }
 
 var _ ssokenizer.ProviderConfig = Config{}
@@ -82,37 +86,22 @@ func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 	defer getLog(r).WithField("status", http.StatusFound).Info()
 
 	tr := ssokenizer.GetTransaction(r)
+	cfg := p.config(r)
 
 	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
 
-	if hd := r.URL.Query().Get("hd"); hd != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("hd", hd))
-	}
-
-	// Allow passing in a org to be passed to Vanta as their source_id param
-	// (ref: https://developer.vanta.com/docs/oauth-flow).
-	// TODO: this might have weird side-effects and/or security implications
-	// and should be checked. By keeping the source_id as part of the state
-	// for the whole round trip means both the state and the source_id can be
-	// checked on the client side for evidence of tampering
-	if si := r.URL.Query().Get("si"); si != "" {
-		if state := r.URL.Query().Get("state"); state != "" {
-			r := regexp.MustCompile("^.*:(.*)$") // Capture text after the first :
-			matches := r.FindStringSubmatch(state)
-			if len(matches) > 1 && matches[1] != "" {
-				opts = append(opts, oauth2.SetAuthURLParam("source_id", matches[1]))
-			} // Pull out the source_id and stuff it into the params so that Vanta can see it
+	for _, param := range cfg.ForwardParams {
+		if value := r.URL.Query().Get(param); value != "" {
+			opts = append(opts, oauth2.SetAuthURLParam(param, value))
 		}
 	}
 
-	url := p.config(r).AuthCodeURL(tr.Nonce, opts...)
+	url := cfg.AuthCodeURL(tr.Nonce, opts...)
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
 func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
-
 	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
-
 	tr := ssokenizer.GetTransaction(r)
 	params := r.URL.Query()
 
@@ -123,20 +112,10 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := params.Get("state")
-
 	if state == "" {
 		r = withError(r, errors.New("missing state"))
 		tr.ReturnError(w, r, "bad response")
 		return
-	}
-
-	returnstate := tr.ReturnState
-	if strings.Contains(returnstate, ":") {
-		res := strings.Split(returnstate, ":")
-		if len(res) > 1 {
-			opts = append(opts, oauth2.SetAuthURLParam("source_id", res[1]))
-		}
-
 	}
 
 	if subtle.ConstantTimeCompare([]byte(tr.Nonce), []byte(state)) != 1 {
@@ -185,6 +164,7 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		tr.ReturnError(w, r, "seal error")
 		return
 	}
+
 	tr.ReturnData(w, r, map[string]string{
 		"sealed":  sealed,
 		"expires": strconv.FormatInt(tok.Expiry.Unix(), 10),
@@ -203,7 +183,6 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tok, err := p.config(r).TokenSource(r.Context(), &oauth2.Token{RefreshToken: refreshToken}).Token()
-
 	if err != nil {
 		getLog(r).
 			WithField("status", http.StatusBadGateway).
@@ -213,7 +192,9 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
+
 	r = withIdToken(r, tok)
+
 	if t := tok.Type(); t != "Bearer" {
 		getLog(r).
 			WithField("status", http.StatusInternalServerError).
@@ -245,6 +226,7 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", time.Until(tok.Expiry)/time.Second))
 

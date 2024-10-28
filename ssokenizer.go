@@ -2,7 +2,6 @@ package ssokenizer
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/superfly/tokenizer"
+	"golang.org/x/exp/maps"
 )
 
 type Server struct {
@@ -47,18 +47,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "ok")
 		return
 	}
+
 	r = WithFields(r, logrus.Fields{"method": r.Method, "uri": r.URL.Path, "host": r.Host})
 
 	provider, ok := s.providers[providerName]
-
 	if !ok {
-		b, err := json.MarshalIndent(s.providers, "", "  ")
-		if err != nil {
-			fmt.Println("error:", err)
-		}
-		fmt.Println("Valid providers: ", string(b))
+		GetLog(r).WithFields(logrus.Fields{
+			"status":    http.StatusNotFound,
+			"providers": maps.Keys(s.providers),
+		}).Info()
 
-		GetLog(r).WithField("status", http.StatusNotFound).Info()
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}

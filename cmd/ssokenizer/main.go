@@ -185,6 +185,7 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 					AuthStyle: 1, //AuthStyleInParams == 1
 				},
 			},
+			ForwardParams: []string{"source_id"},
 		}, nil
 	case "oauth":
 		return &oauth2.Config{
@@ -260,6 +261,7 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 				Scopes:       c.Scopes,
 				Endpoint:     google.Endpoint,
 			},
+			ForwardParams: []string{"hd"},
 		}, nil
 	case "heroku":
 		return &oauth2.Config{
