@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -18,46 +17,16 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type Config struct {
-	oauth2.Config
-
-	// Path where this provider is mounted
-	Path string
-
-	// Regexp of hosts that oauth tokens are allowed to be used with. There is
-	// no need to anchor regexes.
-	AllowedHostPattern string
+type Provider struct {
+	ssokenizer.ProviderConfig
+	OAuthConfig oauth2.Config
 
 	// ForwardParams are the parameters that should be forwarded from the start
 	// request to the auth URL.
 	ForwardParams []string
 }
 
-var _ ssokenizer.ProviderConfig = Config{}
-
-// implements ssokenizer.ProviderConfig
-func (c Config) Register(sealKey string, auth tokenizer.AuthConfig) (http.Handler, error) {
-	switch {
-	case c.ClientID == "":
-		return nil, errors.New("missing client_id")
-	case c.ClientSecret == "":
-		return nil, errors.New("missing client_secret")
-	}
-
-	return &provider{
-		sealKey:                  sealKey,
-		auth:                     auth,
-		AllowedHostPattern:       c.AllowedHostPattern,
-		configWithoutRedirectURL: c,
-	}, nil
-}
-
-type provider struct {
-	sealKey                  string
-	auth                     tokenizer.AuthConfig
-	AllowedHostPattern       string
-	configWithoutRedirectURL Config
-}
+var _ ssokenizer.Provider = (*Provider)(nil)
 
 const (
 	startPath    = "/start"
@@ -65,7 +34,30 @@ const (
 	refreshPath  = "/refresh"
 )
 
-func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// PC implements the ssokenizer.Provider interface.
+func (p *Provider) PC() *ssokenizer.ProviderConfig {
+	return &p.ProviderConfig
+}
+
+// Validate implements the ssokenizer.Provider interface.
+func (p *Provider) Validate() error {
+	switch err := p.ProviderConfig.Validate(); {
+	case err != nil:
+		return err
+	case p.OAuthConfig.ClientID == "":
+		return errors.New("missing client_id")
+	case p.OAuthConfig.ClientSecret == "":
+		return errors.New("missing client_secret")
+	case p.OAuthConfig.Endpoint.AuthURL == "":
+		return errors.New("missing auth_url")
+	case p.OAuthConfig.Endpoint.TokenURL == "":
+		return errors.New("missing token_url")
+	default:
+		return nil
+	}
+}
+
+func (p *Provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch path := strings.TrimSuffix(r.URL.Path, "/"); path {
 	case startPath:
 		p.handleStart(w, r)
@@ -78,28 +70,31 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handleStart(w http.ResponseWriter, r *http.Request) {
 	defer getLog(r).WithField("status", http.StatusFound).Info()
 
 	tr := ssokenizer.StartTransaction(w, r)
 	if tr == nil {
 		return
 	}
-	cfg := p.config(r)
 
 	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
 
-	for _, param := range cfg.ForwardParams {
+	for _, param := range p.ForwardParams {
 		if value := r.URL.Query().Get(param); value != "" {
 			opts = append(opts, oauth2.SetAuthURLParam(param, value))
 		}
 	}
 
-	url := cfg.AuthCodeURL(tr.Nonce, opts...)
+	if p.OAuthConfig.RedirectURL == "" {
+		opts = append(opts, oauth2.SetAuthURLParam("redirect_uri", p.URL.JoinPath(callbackPath).String()))
+	}
+
+	url := p.OAuthConfig.AuthCodeURL(tr.Nonce, opts...)
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
-func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	tr := ssokenizer.RestoreTransaction(w, r)
 	if tr == nil {
 		return
@@ -133,7 +128,7 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := p.config(r).Exchange(r.Context(), code, oauth2.AccessTypeOffline)
+	tok, err := p.OAuthConfig.Exchange(r.Context(), code, oauth2.AccessTypeOffline)
 	if err != nil {
 		r = withError(r, fmt.Errorf("failed exchange: %w", err))
 		tr.ReturnError(w, r, "bad response")
@@ -149,17 +144,11 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secret := &tokenizer.Secret{
-		AuthConfig: p.auth,
-		ProcessorConfig: &tokenizer.OAuthProcessorConfig{
-			Token: &tokenizer.OAuthToken{
-				AccessToken:  tok.AccessToken,
-				RefreshToken: tok.RefreshToken},
-		},
-		RequestValidators: p.requestValidators(r),
-	}
-
-	sealed, err := secret.Seal(p.sealKey)
+	sealed, err := p.Tokenizer.SealedSecret(&tokenizer.OAuthProcessorConfig{
+		Token: &tokenizer.OAuthToken{
+			AccessToken:  tok.AccessToken,
+			RefreshToken: tok.RefreshToken},
+	})
 	if err != nil {
 		r = withError(r, fmt.Errorf("failed seal: %w", err))
 		tr.ReturnError(w, r, "seal error")
@@ -172,7 +161,7 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	refreshToken, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
 		getLog(r).
@@ -183,7 +172,7 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := p.config(r).TokenSource(r.Context(), &oauth2.Token{RefreshToken: refreshToken}).Token()
+	tok, err := p.OAuthConfig.TokenSource(r.Context(), &oauth2.Token{RefreshToken: refreshToken}).Token()
 	if err != nil {
 		getLog(r).
 			WithField("status", http.StatusBadGateway).
@@ -206,18 +195,12 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secret := &tokenizer.Secret{
-		AuthConfig: p.auth,
-		ProcessorConfig: &tokenizer.OAuthProcessorConfig{
-			Token: &tokenizer.OAuthToken{
-				AccessToken:  tok.AccessToken,
-				RefreshToken: tok.RefreshToken,
-			},
+	sealed, err := p.Tokenizer.SealedSecret(&tokenizer.OAuthProcessorConfig{
+		Token: &tokenizer.OAuthToken{
+			AccessToken:  tok.AccessToken,
+			RefreshToken: tok.RefreshToken,
 		},
-		RequestValidators: p.requestValidators(r),
-	}
-
-	sealed, err := secret.Seal(p.sealKey)
+	})
 	if err != nil {
 		getLog(r).
 			WithField("status", http.StatusInternalServerError).
@@ -243,27 +226,6 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	getLog(r).
 		WithField("status", http.StatusOK).
 		Info()
-}
-
-func (p *provider) config(r *http.Request) *Config {
-	scheme := "http://"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https://"
-	}
-	cfg := p.configWithoutRedirectURL
-	cfg.RedirectURL = scheme + r.Host + cfg.Path + callbackPath
-
-	return &cfg
-}
-
-func (p *provider) requestValidators(r *http.Request) []tokenizer.RequestValidator {
-	if p.AllowedHostPattern == "" {
-		return nil
-	}
-	// clients need to be able to send refresh tokens to ssokenizer itself, so
-	// we add ourself to the allowed-host pattern.
-	re := regexp.MustCompile(fmt.Sprintf("^(%s|%s)$", regexp.QuoteMeta(r.Host), p.AllowedHostPattern))
-	return []tokenizer.RequestValidator{tokenizer.AllowHostPattern(re)}
 }
 
 // logging helpers. aliased for convenience
