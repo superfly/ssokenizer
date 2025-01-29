@@ -52,7 +52,7 @@ func (t *Transaction) returnData(w http.ResponseWriter, r *http.Request, data ma
 	t.setCookie(w, r, "")
 
 	// important that this is a copy!
-	returnURL := getProvider(r).PC().ReturnURL
+	returnURL := GetProvider(r).PC().ReturnURL
 	q := returnURL.Query()
 
 	for k, v := range data {
@@ -129,7 +129,7 @@ func (t *Transaction) marshal() (string, error) {
 }
 
 func (t *Transaction) setCookie(w http.ResponseWriter, r *http.Request, v string) {
-	providerURL := &getProvider(r).PC().URL
+	providerURL := &GetProvider(r).PC().URL
 
 	var maxAge int
 	if v == "" {

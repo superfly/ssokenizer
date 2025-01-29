@@ -36,6 +36,14 @@ func NewServer(providers ProviderRegistry) *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if parts[0] == "health" {
+		fmt.Fprintln(w, "ok")
+		return
+	}
+
+	providerName := strings.Join(parts[0:len(parts)-1], "/")
+
 	providerName, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	if providerName == "health" {
 		fmt.Fprintln(w, "ok")
@@ -62,7 +70,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r = withProvider(r, provider)
+	r = WithProvider(r, provider)
 	r.URL.Path = "/" + rest
 	provider.ServeHTTP(w, r)
 }
