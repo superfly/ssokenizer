@@ -220,6 +220,10 @@ type IdentityProviderConfig struct {
 	TokenURL string `yaml:"token_url"`
 
 	SecretAuth SecretAuthConfig `yaml:"secret_auth"`
+
+	// source_id parameter to pass to Vanta provider. Only needed for "vanta" profile
+	// TODO: figure out a way to pass a map[string]string of "extra" stuff to providers.
+	SourceID string `yaml:"source_id"`
 }
 
 func (ic *IdentityProviderConfig) provider(name string, c *Config) (ssokenizer.Provider, error) {
@@ -273,13 +277,18 @@ func (ic *IdentityProviderConfig) provider(name string, c *Config) (ssokenizer.P
 
 	switch ic.Profile {
 	case "vanta":
+		if ic.SourceID == "" {
+			return nil, errors.New("missing source_id")
+		}
+
 		op.OAuthConfig.Endpoint = xoauth2.Endpoint{
 			AuthURL:   "https://app.vanta.com/oauth/authorize",
 			TokenURL:  "https://api.vanta.com/oauth/token",
 			AuthStyle: xoauth2.AuthStyleInParams,
 		}
 
-		op.ForwardParams = []string{"source_id"}
+		op.AuthRequestParams = map[string]string{"source_id": ic.SourceID}
+		op.TokenRequestParams = map[string]string{"source_id": ic.SourceID}
 
 		return &vanta.Provider{Provider: op}, nil
 	case "oauth":
