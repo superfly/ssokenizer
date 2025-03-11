@@ -70,7 +70,7 @@ func Run(ctx context.Context, args []string) error {
 }
 
 type Config struct {
-	// Full URL of the tokenizer service
+	// Full URL of the ssokenizer service
 	URL string `yaml:"url"`
 
 	// Tokenizer seal (public) key
@@ -107,6 +107,8 @@ func (c *Config) validate() error {
 		return fmt.Errorf("invalid URL (%q): %w", c.URL, err)
 	case c.ssokenizerURL.Scheme == "" || c.ssokenizerURL.Host == "":
 		return fmt.Errorf("malformed URL: %q", c.URL)
+	case c.ssokenizerURL.Path == "":
+		c.ssokenizerURL.Path = "/"
 	}
 
 	if c.SealKey == "" {

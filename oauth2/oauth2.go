@@ -128,7 +128,12 @@ func (p *Provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := p.OAuthConfig.Exchange(r.Context(), code, oauth2.AccessTypeOffline)
+	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
+	if p.OAuthConfig.RedirectURL == "" {
+		opts = append(opts, oauth2.SetAuthURLParam("redirect_uri", p.URL.JoinPath(callbackPath).String()))
+	}
+
+	tok, err := p.OAuthConfig.Exchange(r.Context(), code, opts...)
 	if err != nil {
 		r = withError(r, fmt.Errorf("failed exchange: %w", err))
 		tr.ReturnError(w, r, "bad response")
