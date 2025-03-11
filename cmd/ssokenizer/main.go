@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/superfly/ssokenizer"
+	"github.com/superfly/ssokenizer/musickit"
 	"github.com/superfly/ssokenizer/oauth2"
 	"github.com/superfly/ssokenizer/vanta"
 	"github.com/superfly/tokenizer"
@@ -221,29 +222,18 @@ type IdentityProviderConfig struct {
 	// oauth token endpoint URL. Only needed for "oauth" profile
 	TokenURL string `yaml:"token_url"`
 
+	// Apple MusicKit developer token. Only needed for "musickit" profile
+	MusicKitDeveloperToken string `yaml:"developer_token"`
+
 	SecretAuth SecretAuthConfig `yaml:"secret_auth"`
 }
 
 func (ic *IdentityProviderConfig) provider(name string, c *Config) (ssokenizer.Provider, error) {
-	switch {
-	case ic.ClientID == "":
-		return nil, errors.New("missing client_id")
-	case ic.ClientSecret == "":
-		return nil, errors.New("missing client_secret")
-	}
-
-	op := oauth2.Provider{
-		ProviderConfig: ssokenizer.ProviderConfig{
-			Tokenizer: ssokenizer.TokenizerConfig{
-				SealKey: c.SealKey,
-			},
-			URL: *c.ssokenizerURL.JoinPath("/" + name),
+	pc := ssokenizer.ProviderConfig{
+		Tokenizer: ssokenizer.TokenizerConfig{
+			SealKey: c.SealKey,
 		},
-		OAuthConfig: xoauth2.Config{
-			ClientID:     ic.ClientID,
-			ClientSecret: ic.ClientSecret,
-			Scopes:       ic.Scopes,
-		},
+		URL: *c.ssokenizerURL.JoinPath("/" + name),
 	}
 
 	switch tac, err := ic.SecretAuth.tokenizerAuthConfig(); {
@@ -252,16 +242,16 @@ func (ic *IdentityProviderConfig) provider(name string, c *Config) (ssokenizer.P
 	case tac == nil && c.globalTAC == nil:
 		return nil, errors.New("missing secret_auth")
 	case tac == nil:
-		op.ProviderConfig.Tokenizer.Auth = c.globalTAC
+		pc.Tokenizer.Auth = c.globalTAC
 	default:
-		op.ProviderConfig.Tokenizer.Auth = tac
+		pc.Tokenizer.Auth = tac
 	}
 
 	switch {
 	case ic.ReturnURL == "" && c.globalReturnURL == nil:
 		return nil, errors.New("missing return_url")
 	case ic.ReturnURL == "":
-		op.ProviderConfig.ReturnURL = *c.globalReturnURL
+		pc.ReturnURL = *c.globalReturnURL
 	default:
 		switch u, err := url.Parse(ic.ReturnURL); {
 		case err != nil:
@@ -269,8 +259,46 @@ func (ic *IdentityProviderConfig) provider(name string, c *Config) (ssokenizer.P
 		case u.Scheme == "" || u.Host == "":
 			return nil, fmt.Errorf("malformed return_url: %q", ic.ReturnURL)
 		default:
-			op.ProviderConfig.ReturnURL = *u
+			pc.ReturnURL = *u
 		}
+	}
+
+	switch ic.Profile {
+	case "musickit":
+		return ic.musicKitProvider(pc, c)
+	default:
+		return ic.oauthProvider(pc, c)
+	}
+}
+
+func (ic *IdentityProviderConfig) musicKitProvider(pc ssokenizer.ProviderConfig, c *Config) (ssokenizer.Provider, error) {
+	if ic.MusicKitDeveloperToken == "" {
+		return nil, errors.New("missing developer_token")
+	}
+
+	pc.Tokenizer.RequestValidators = c.tokenizerHostValidator(`api\.music\.apple\.com`)
+
+	return &musickit.Provider{
+		ProviderConfig: pc,
+		DeveloperToken: ic.MusicKitDeveloperToken,
+	}, nil
+}
+
+func (ic *IdentityProviderConfig) oauthProvider(pc ssokenizer.ProviderConfig, c *Config) (ssokenizer.Provider, error) {
+	switch {
+	case ic.ClientID == "":
+		return nil, errors.New("missing client_id")
+	case ic.ClientSecret == "":
+		return nil, errors.New("missing client_secret")
+	}
+
+	op := oauth2.Provider{
+		ProviderConfig: pc,
+		OAuthConfig: xoauth2.Config{
+			ClientID:     ic.ClientID,
+			ClientSecret: ic.ClientSecret,
+			Scopes:       ic.Scopes,
+		},
 	}
 
 	switch ic.Profile {

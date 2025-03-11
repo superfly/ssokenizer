@@ -1,0 +1,34 @@
+<html>
+
+<head>
+    <title>Authenticating to MusicKit</title>
+    <meta name="apple-music-developer-token" content="{{ .DeveloperToken }}">
+    <meta name="apple-music-app-name" content="ssokenizer" />
+    <meta name="apple-music-app-build" content="0.0.0.1" />
+    <script src="static/musickit.js"></script>
+</head>
+
+<body>
+    <noscript>
+        JavaScript is required to authenticate with MusicKit
+    </noscript>
+
+    <form id="tokenForm" method="post" action="callback">
+        <input id="tokenInput" type="hidden" name="token" />
+        <input type="hidden" name="state" value="{{ .State }}" />
+    </form>
+
+    <script>
+        document.addEventListener('musickitconfigured', function () {
+            MusicKit.getInstance().authorize().then(function (token) {
+                console.log('MusicKit successfully authorized');
+                document.getElementById('tokenInput').value = token;
+                document.getElementById('tokenForm').submit();
+            }).catch(function (error) {
+                console.log('Error initializing MusicKit:', error);
+            });
+        });
+    </script>
+</body>
+
+</html>
