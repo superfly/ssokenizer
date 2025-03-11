@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -50,7 +51,8 @@ func (t *Transaction) returnData(w http.ResponseWriter, r *http.Request, data ma
 
 	t.setCookie(w, r, "")
 
-	returnURL := getProvider(r).returnURL
+	// important that this is a copy!
+	returnURL := GetProvider(r).PC().ReturnURL
 	q := returnURL.Query()
 
 	for k, v := range data {
@@ -84,25 +86,28 @@ func StartTransaction(w http.ResponseWriter, r *http.Request) *Transaction {
 }
 
 func RestoreTransaction(w http.ResponseWriter, r *http.Request) *Transaction {
-	t := &Transaction{
-		Nonce:  randHex(16),
-		Expiry: time.Now().Add(transactionTTL),
+	var t Transaction
+
+	tc, err := r.Cookie(transactionCookieName)
+	if err != nil || tc.Value == "" {
+		r = WithError(r, fmt.Errorf("missing transaction cookie: %w", err))
+		t.ReturnError(w, r, "bad request")
+		return nil
 	}
 
-	if tc, err := r.Cookie(transactionCookieName); err != http.ErrNoCookie && tc.Value != "" {
-		if err := unmarshalTransaction(t, tc.Value); err != nil {
-			r = WithError(r, fmt.Errorf("bad transaction cookie: %w", err))
-			t.ReturnError(w, r, "bad request")
-			return nil
-		}
-
-		if time.Now().After(t.Expiry) {
-			r = WithError(r, errors.New("expired transaction"))
-			t.ReturnError(w, r, "expired")
-			return nil
-		}
+	if err := unmarshalTransaction(&t, tc.Value); err != nil {
+		r = WithError(r, fmt.Errorf("bad transaction cookie: %w", err))
+		t.ReturnError(w, r, "bad request")
+		return nil
 	}
-	return t
+
+	if time.Now().After(t.Expiry) {
+		r = WithError(r, errors.New("expired transaction"))
+		t.ReturnError(w, r, "expired")
+		return nil
+	}
+
+	return &t
 }
 
 func unmarshalTransaction(t *Transaction, s string) error {
@@ -124,8 +129,7 @@ func (t *Transaction) marshal() (string, error) {
 }
 
 func (t *Transaction) setCookie(w http.ResponseWriter, r *http.Request, v string) {
-	providerName := getProvider(r).name
-	tls := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	providerURL := &GetProvider(r).PC().URL
 
 	var maxAge int
 	if v == "" {
@@ -135,8 +139,8 @@ func (t *Transaction) setCookie(w http.ResponseWriter, r *http.Request, v string
 	http.SetCookie(w, &http.Cookie{
 		Name:     transactionCookieName,
 		Value:    v,
-		Path:     "/" + providerName,
-		Secure:   tls,
+		Path:     providerURL.Path,
+		Secure:   strings.EqualFold(providerURL.Scheme, "https"),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,

@@ -2,44 +2,48 @@ package ssokenizer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/sirupsen/logrus"
-	"github.com/superfly/tokenizer"
-	"golang.org/x/exp/maps"
 )
 
 type Server struct {
+	// Address is populated with the listening address after [Start] is called.
 	Address string
-	Done    chan struct{}
-	Err     error
 
-	sealKey string
+	// Done is closed when the server has stopped. It is not populated until
+	// [Start] is called.
+	Done chan struct{}
 
-	providers map[string]*provider
+	// Err is populated with any error returned by the HTTP server. It should
+	// not be read until Done is closed.
+	Err error
+
+	providers ProviderRegistry
 	http      *http.Server
 }
 
-// Returns a new Server. When a user successfully completes SSO, the sealKey is
-// used to encrypt the resulting token for use with tokenizer. The rpAuth is
-// set as the authentication token for the tokenizer sealed token and must be
-// provided to tokenizer by the relying party in order to use the sealed token.
-func NewServer(sealKey string) *Server {
-	s := &Server{
-		sealKey:   sealKey,
-		providers: make(map[string](*provider)),
-	}
-
+// Returns a new Server.
+func NewServer(providers ProviderRegistry) *Server {
+	s := &Server{providers: providers}
 	s.http = &http.Server{Handler: s}
 
 	return s
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if parts[0] == "health" {
+		fmt.Fprintln(w, "ok")
+		return
+	}
+
+	providerName := strings.Join(parts[0:len(parts)-1], "/")
+
 	providerName, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	if providerName == "health" {
 		fmt.Fprintln(w, "ok")
@@ -48,47 +52,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	r = WithFields(r, logrus.Fields{"method": r.Method, "uri": r.URL.Path, "host": r.Host})
 
-	provider, ok := s.providers[providerName]
-	if !ok {
-		GetLog(r).WithFields(logrus.Fields{
-			"status":    http.StatusNotFound,
-			"providers": maps.Keys(s.providers),
-		}).Info()
-
+	provider, err := s.providers.Get(r.Context(), providerName)
+	switch {
+	case errors.Is(err, ErrProviderNotFound):
+		GetLog(r).WithField("status", http.StatusNotFound).Info()
 		w.WriteHeader(http.StatusNotFound)
 		return
+	case err != nil:
+		GetLog(r).WithError(err).WithField("status", http.StatusInternalServerError).Info()
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
-	r = withProvider(r, provider)
+
+	if err = provider.Validate(); err != nil {
+		GetLog(r).WithError(err).WithField("status", http.StatusInternalServerError).Warn()
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	r = WithProvider(r, provider)
 	r.URL.Path = "/" + rest
-
-	provider.handler.ServeHTTP(w, r)
-}
-
-// Configure the server with an SSO provider. The name dictates the path that
-// the provider's routes are served under. The returnURL is where the user is
-// returned after an SSO transaction completes.
-func (s *Server) AddProvider(name string, pc ProviderConfig, returnURL string, auth tokenizer.AuthConfig) error {
-	if _, dup := s.providers[name]; dup {
-		return fmt.Errorf("duplicate provider: %s", name)
-	}
-
-	p, err := pc.Register(s.sealKey, auth)
-	if err != nil {
-		return err
-	}
-
-	ru, err := url.Parse(returnURL)
-	if err != nil {
-		return err
-	}
-
-	s.providers[name] = &provider{
-		name:      name,
-		handler:   p,
-		returnURL: *ru,
-	}
-
-	return nil
+	provider.ServeHTTP(w, r)
 }
 
 // Start the server in a goroutine, listening at the specified address

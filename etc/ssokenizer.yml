@@ -1,3 +1,6 @@
+# Full URL of the ssokenizer service
+url: "$SSOKENIZER_URL"
+
 # Public part of tokenizer's keypair
 seal_key: "$TOKENIZER_SEAL_KEY"
 
@@ -148,12 +151,12 @@ identity_providers:
     scopes:
       - "$GITHUB_AUTH_SCOPES"
 
-  vanta:
-    secret_auth:
-      bearer: "$PROXY_AUTH"
-    profile: vanta
-    client_id: "$VANTA_CLIENT_ID"
-    client_secret: "$VANTA_CLIENT_SECRET"
-    return_url: "$VANTA_RETURN_URL"
-    scopes:
-      - "$VANTA_AUTH_SCOPES"      
+  # vanta:
+  #   secret_auth:
+  #     bearer: "$PROXY_AUTH"
+  #   profile: vanta
+  #   client_id: "$VANTA_CLIENT_ID"
+  #   client_secret: "$VANTA_CLIENT_SECRET"
+  #   return_url: "$VANTA_RETURN_URL"
+  #   scopes:
+  #     - "$VANTA_AUTH_SCOPES"

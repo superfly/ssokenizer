@@ -31,6 +31,8 @@ const rpAuth = "555"
 func setupTestServers(t *testing.T) (*httptest.Server, *ssokenizer.Server, *httptest.Server, *httptest.Server) {
 	rpServer := httptest.NewServer(rp)
 	t.Cleanup(rpServer.Close)
+	returnURL, err := url.Parse(rpServer.URL)
+	assert.NoError(t, err)
 	t.Logf("rp=%s", rpServer.URL)
 
 	idpServer := httptest.NewServer(idp)
@@ -48,7 +50,8 @@ func setupTestServers(t *testing.T) (*httptest.Server, *ssokenizer.Server, *http
 	tkzServer := httptest.NewServer(tkz)
 	t.Cleanup(tkzServer.Close)
 
-	skz := ssokenizer.NewServer(sealKey)
+	providers := make(ssokenizer.StaticProviderRegistry)
+	skz := ssokenizer.NewServer(providers)
 	assert.NoError(t, skz.Start("127.0.0.1:"))
 	t.Logf("skz=http://%s", skz.Address)
 	t.Cleanup(func() {
@@ -57,9 +60,22 @@ func setupTestServers(t *testing.T) (*httptest.Server, *ssokenizer.Server, *http
 		assert.NoError(t, skz.Err)
 	})
 
-	assert.NoError(t, skz.AddProvider("idp", Config{
-		Path: "/idp",
-		Config: oauth2.Config{
+	skzURL, err := url.Parse("http://" + skz.Address)
+	assert.NoError(t, err)
+	providerURL := skzURL.JoinPath("/idp")
+
+	// we don't know our URL in tests until the server is started, so we can't
+	// populate this earlier.
+	providers["idp"] = &Provider{
+		ProviderConfig: ssokenizer.ProviderConfig{
+			Tokenizer: ssokenizer.TokenizerConfig{
+				SealKey: sealKey,
+				Auth:    tokenizer.NewBearerAuthConfig(rpAuth),
+			},
+			URL:       *providerURL,
+			ReturnURL: *returnURL,
+		},
+		OAuthConfig: oauth2.Config{
 			ClientID:     testClientID,
 			ClientSecret: testClientSecret,
 			Endpoint: oauth2.Endpoint{
@@ -68,7 +84,8 @@ func setupTestServers(t *testing.T) (*httptest.Server, *ssokenizer.Server, *http
 			},
 			Scopes: []string{"my scope"},
 		},
-	}, rpServer.URL, tokenizer.NewBearerAuthConfig(rpAuth)))
+	}
+
 	return rpServer, skz, tkzServer, idpServer
 }
 

@@ -14,12 +14,12 @@ const (
 	contextKeyLog      contextKey = "log"
 )
 
-func withProvider(r *http.Request, p *provider) *http.Request {
+func WithProvider(r *http.Request, p Provider) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), contextKeyProvider, p))
 }
 
-func getProvider(r *http.Request) *provider {
-	return r.Context().Value(contextKeyProvider).(*provider)
+func GetProvider(r *http.Request) Provider {
+	return r.Context().Value(contextKeyProvider).(Provider)
 }
 
 // Updates the logrus.FieldLogger in the context with added data. Requests are

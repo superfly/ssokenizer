@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -59,7 +58,7 @@ Arguments:
 	} else if err := UnmarshalConfig(&c.Config, buf); err != nil {
 		return err
 	}
-	if err := c.Config.Validate(); err != nil {
+	if err := c.Config.validate(); err != nil {
 		return err
 	}
 
@@ -72,28 +71,7 @@ Arguments:
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	server := ssokenizer.NewServer(c.Config.SealKey)
-	serverTAC, _ := c.Config.SecretAuth.tokenizerAuthConfig()
-
-	for name, p := range c.Config.IdentityProviders {
-		returnURL := p.ReturnURL
-		if returnURL == "" {
-			returnURL = strings.ReplaceAll(c.Config.ReturnURL, ":name", name)
-			returnURL = strings.ReplaceAll(returnURL, ":profile", p.Profile)
-		}
-
-		tac, _ := p.SecretAuth.tokenizerAuthConfig()
-		if tac == nil {
-			tac = serverTAC
-		}
-
-		pc, err := p.providerConfig(name, returnURL)
-		if err != nil {
-			return err
-		}
-		server.AddProvider(name, pc, returnURL, tac)
-	}
-
+	server := ssokenizer.NewServer(c.Config.providers)
 	if err := server.Start(c.Config.HTTP.Address); err != nil {
 		return err
 	}
