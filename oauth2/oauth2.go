@@ -143,6 +143,9 @@ func (p *Provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	for key, value := range p.TokenRequestParams {
 		opts = append(opts, oauth2.SetAuthURLParam(key, value))
 	}
+	if p.OAuthConfig.RedirectURL == "" {
+		opts = append(opts, oauth2.SetAuthURLParam("redirect_uri", p.URL.JoinPath(callbackPath).String()))
+	}
 
 	if p.OAuthConfig.RedirectURL == "" {
 		opts = append(opts, oauth2.SetAuthURLParam("redirect_uri", p.URL.JoinPath(callbackPath).String()))
