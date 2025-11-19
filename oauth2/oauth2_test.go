@@ -29,13 +29,25 @@ func init() {
 const rpAuth = "555"
 
 func setupTestServers(t *testing.T) (*httptest.Server, *ssokenizer.Server, *httptest.Server, *httptest.Server) {
+	return setupTestServersWithParams(t, nil, nil)
+}
+
+func setupTestServersWithParams(t *testing.T, authParams, tokenParams map[string]string) (*httptest.Server, *ssokenizer.Server, *httptest.Server, *httptest.Server) {
 	rpServer := httptest.NewServer(rp)
 	t.Cleanup(rpServer.Close)
 	returnURL, err := url.Parse(rpServer.URL)
 	assert.NoError(t, err)
 	t.Logf("rp=%s", rpServer.URL)
 
-	idpServer := httptest.NewServer(idp)
+	// Use the parameter-aware mock IDP if custom parameters are provided
+	var idpHandler http.HandlerFunc
+	if authParams != nil || tokenParams != nil {
+		idpHandler = createMockIDP(authParams, tokenParams)
+	} else {
+		idpHandler = idp
+	}
+
+	idpServer := httptest.NewServer(idpHandler)
 	t.Cleanup(idpServer.Close)
 	t.Logf("idp=%s", idpServer.URL)
 
@@ -84,6 +96,8 @@ func setupTestServers(t *testing.T) (*httptest.Server, *ssokenizer.Server, *http
 			},
 			Scopes: []string{"my scope"},
 		},
+		AuthRequestParams:  authParams,
+		TokenRequestParams: tokenParams,
 	}
 
 	return rpServer, skz, tkzServer, idpServer
@@ -172,6 +186,121 @@ const (
 	testClientID     = "my-client-id"
 	testClientSecret = "my-client-secret"
 )
+
+// createMockIDP creates a mock identity provider that validates custom parameters
+func createMockIDP(expectedAuthParams, expectedTokenParams map[string]string) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		username, password, _ := r.BasicAuth()
+		authorization := r.Header.Get("Authorization")
+
+		logrus.WithFields(logrus.Fields{
+			"server":        "idp",
+			"method":        r.Method,
+			"url":           r.URL.String(),
+			"form":          r.Form,
+			"username":      username,
+			"password":      password,
+			"authorization": authorization,
+		}).Info()
+
+		switch r.URL.Path {
+		case "/auth":
+			if r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			query := r.URL.Query()
+
+			switch query.Get("client_id") {
+			case testClientID:
+			default:
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			// Validate custom auth parameters
+			for key, expectedValue := range expectedAuthParams {
+				actualValue := query.Get(key)
+				if actualValue != expectedValue {
+					logrus.WithFields(logrus.Fields{
+						"parameter": key,
+						"expected":  expectedValue,
+						"actual":    actualValue,
+					}).Error("auth parameter mismatch")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+			}
+
+			ru := query.Get("redirect_uri")
+			if ru == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			ruu, err := url.Parse(ru)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			params := make(url.Values)
+			params.Set("code", "111")
+			params.Set("state", query.Get("state"))
+			ruu.RawQuery = params.Encode()
+
+			http.Redirect(w, r, ruu.String(), http.StatusFound)
+			return
+		case "/token":
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			if username != testClientID || password != testClientSecret {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
+			// Validate custom token parameters only for authorization code flow, not refresh token flow
+			if r.Form.Get("grant_type") == "authorization_code" {
+				for key, expectedValue := range expectedTokenParams {
+					actualValue := r.Form.Get(key)
+					if actualValue != expectedValue {
+						logrus.WithFields(logrus.Fields{
+							"parameter": key,
+							"expected":  expectedValue,
+							"actual":    actualValue,
+						}).Error("token parameter mismatch")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+				}
+			}
+
+			switch {
+			case r.Form.Get("code") == "111":
+			case r.Form.Get("refresh_token") == "888":
+			default:
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"access_token": "999", "token_type": "Bearer", "refresh_token": "888", "expires_in": 3600}`))
+			return
+		case "/api":
+			if authorization != "Bearer 999" {
+				w.WriteHeader(http.StatusUnauthorized)
+			}
+			return
+		}
+	})
+}
 
 var idp = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
@@ -278,4 +407,124 @@ func (j noSecureJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
 		cookie.Secure = false
 	}
 	j.CookieJar.SetCookies(u, cookies)
+}
+
+// TestAuthRequestParams tests that custom parameters are correctly added to auth requests
+func TestAuthRequestParams(t *testing.T) {
+	authParams := map[string]string{
+		"custom_param": "custom_value",
+		"audience":     "https://api.example.com",
+		"prompt":       "consent",
+	}
+
+	rpServer, skz, tkzServer, idpServer := setupTestServersWithParams(t, authParams, nil)
+
+	client := new(http.Client)
+	client.Jar, _ = cookiejar.New(nil)
+	client.Jar = noSecureJar{client.Jar}
+
+	resp, err := client.Get("http://" + skz.Address + "/idp/start")
+	assert.NoError(t, err)
+	sealed := checkResponse(t, resp, rpServer.URL, "")
+
+	// Verify the sealed token works with tokenizer
+	tkzClient, err := tokenizer.Client(tkzServer.URL, tokenizer.WithAuth(rpAuth), tokenizer.WithSecret(sealed, nil))
+	assert.NoError(t, err)
+	resp, err = tkzClient.Get(idpServer.URL + "/api")
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// TestTokenRequestParams tests that custom parameters are correctly added to token requests
+func TestTokenRequestParams(t *testing.T) {
+	tokenParams := map[string]string{
+		"custom_token_param": "token_value",
+		"resource":           "https://api.example.com",
+		"assertion":          "custom_assertion",
+	}
+
+	rpServer, skz, tkzServer, idpServer := setupTestServersWithParams(t, nil, tokenParams)
+
+	client := new(http.Client)
+	client.Jar, _ = cookiejar.New(nil)
+	client.Jar = noSecureJar{client.Jar}
+
+	resp, err := client.Get("http://" + skz.Address + "/idp/start")
+	assert.NoError(t, err)
+	sealed := checkResponse(t, resp, rpServer.URL, "")
+
+	// Verify the sealed token works with tokenizer
+	tkzClient, err := tokenizer.Client(tkzServer.URL, tokenizer.WithAuth(rpAuth), tokenizer.WithSecret(sealed, nil))
+	assert.NoError(t, err)
+	resp, err = tkzClient.Get(idpServer.URL + "/api")
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// TestCombinedCustomParams tests that both auth and token parameters work together
+func TestCombinedCustomParams(t *testing.T) {
+	authParams := map[string]string{
+		"custom_auth_param": "auth_value",
+		"audience":          "https://api.example.com",
+		"prompt":            "consent",
+	}
+
+	tokenParams := map[string]string{
+		"custom_token_param": "token_value",
+		"resource":           "https://api.example.com",
+		"assertion":          "custom_assertion",
+	}
+
+	rpServer, skz, tkzServer, idpServer := setupTestServersWithParams(t, authParams, tokenParams)
+
+	client := new(http.Client)
+	client.Jar, _ = cookiejar.New(nil)
+	client.Jar = noSecureJar{client.Jar}
+
+	resp, err := client.Get("http://" + skz.Address + "/idp/start")
+	assert.NoError(t, err)
+	sealed := checkResponse(t, resp, rpServer.URL, "")
+
+	// Verify the sealed token works with tokenizer
+	tkzClient, err := tokenizer.Client(tkzServer.URL, tokenizer.WithAuth(rpAuth), tokenizer.WithSecret(sealed, nil))
+	assert.NoError(t, err)
+	resp, err = tkzClient.Get(idpServer.URL + "/api")
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Test token refresh with custom parameters
+	withRefresh := map[string]string{tokenizer.ParamSubtoken: tokenizer.SubtokenRefresh}
+	refreshClient, err := tokenizer.Client(tkzServer.URL, tokenizer.WithAuth(rpAuth), tokenizer.WithSecret(sealed, withRefresh))
+	assert.NoError(t, err)
+	resp, err = refreshClient.Get("http://" + skz.Address + "/idp/refresh")
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// TestCustomParamsWithRedirectURI tests that custom parameters work with redirect_uri logic
+func TestCustomParamsWithRedirectURI(t *testing.T) {
+	authParams := map[string]string{
+		"custom_param": "custom_value",
+	}
+
+	tokenParams := map[string]string{
+		"custom_token_param": "token_value",
+	}
+
+	rpServer, skz, tkzServer, idpServer := setupTestServersWithParams(t, authParams, tokenParams)
+
+	client := new(http.Client)
+	client.Jar, _ = cookiejar.New(nil)
+	client.Jar = noSecureJar{client.Jar}
+
+	resp, err := client.Get("http://" + skz.Address + "/idp/start")
+	assert.NoError(t, err)
+	sealed := checkResponse(t, resp, rpServer.URL, "")
+
+	// Verify the sealed token works with tokenizer
+	tkzClient, err := tokenizer.Client(tkzServer.URL, tokenizer.WithAuth(rpAuth), tokenizer.WithSecret(sealed, nil))
+	assert.NoError(t, err)
+	resp, err = tkzClient.Get(idpServer.URL + "/api")
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }

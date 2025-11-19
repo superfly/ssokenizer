@@ -24,6 +24,12 @@ type Provider struct {
 	// ForwardParams are the parameters that should be forwarded from the start
 	// request to the auth URL.
 	ForwardParams []string
+
+	// Params to add to the auth request.
+	AuthRequestParams map[string]string
+
+	// Params to add to the token request.
+	TokenRequestParams map[string]string
 }
 
 var _ ssokenizer.Provider = (*Provider)(nil)
@@ -86,6 +92,10 @@ func (p *Provider) handleStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	for key, value := range p.AuthRequestParams {
+		opts = append(opts, oauth2.SetAuthURLParam(key, value))
+	}
+
 	if p.OAuthConfig.RedirectURL == "" {
 		opts = append(opts, oauth2.SetAuthURLParam("redirect_uri", p.URL.JoinPath(callbackPath).String()))
 	}
@@ -129,6 +139,11 @@ func (p *Provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
+
+	for key, value := range p.TokenRequestParams {
+		opts = append(opts, oauth2.SetAuthURLParam(key, value))
+	}
+
 	if p.OAuthConfig.RedirectURL == "" {
 		opts = append(opts, oauth2.SetAuthURLParam("redirect_uri", p.URL.JoinPath(callbackPath).String()))
 	}
