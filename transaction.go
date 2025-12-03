@@ -32,6 +32,10 @@ type Transaction struct {
 
 	// Time after which this transaction cookie will be ignored.
 	Expiry time.Time
+
+	// Parameters forwarded from the start request that should also be sent
+	// to the token exchange request (e.g., source_id for Vanta).
+	ForwardedParams map[string]string
 }
 
 // Return the user to the returnURL with the provided data set as query string
@@ -83,6 +87,17 @@ func StartTransaction(w http.ResponseWriter, r *http.Request) *Transaction {
 
 	t.setCookie(w, r, ts)
 	return t
+}
+
+// SaveTransaction updates an existing transaction cookie.
+func SaveTransaction(w http.ResponseWriter, r *http.Request, t *Transaction) error {
+	ts, err := t.marshal()
+	if err != nil {
+		return fmt.Errorf("marshal transaction cookie: %w", err)
+	}
+
+	t.setCookie(w, r, ts)
+	return nil
 }
 
 func RestoreTransaction(w http.ResponseWriter, r *http.Request) *Transaction {

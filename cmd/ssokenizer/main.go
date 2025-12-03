@@ -307,18 +307,20 @@ func (ic *IdentityProviderConfig) oauthProvider(pc ssokenizer.ProviderConfig, c 
 
 	switch ic.Profile {
 	case "vanta":
-		if ic.SourceID == "" {
-			return nil, errors.New("missing source_id")
-		}
-
 		op.OAuthConfig.Endpoint = xoauth2.Endpoint{
 			AuthURL:   "https://app.vanta.com/oauth/authorize",
 			TokenURL:  "https://api.vanta.com/oauth/token",
 			AuthStyle: xoauth2.AuthStyleInParams,
 		}
 
-		op.AuthRequestParams = map[string]string{"source_id": ic.SourceID}
-		op.TokenRequestParams = map[string]string{"source_id": ic.SourceID}
+		if ic.SourceID == "" {
+			// Enable dynamic source_id from URL parameter when not configured
+			op.ForwardParams = []string{"source_id"}
+		} else {
+			// Use static source_id from config
+			op.AuthRequestParams = map[string]string{"source_id": ic.SourceID}
+			op.TokenRequestParams = map[string]string{"source_id": ic.SourceID}
+		}
 
 		return &vanta.Provider{Provider: op}, nil
 	case "oauth":
