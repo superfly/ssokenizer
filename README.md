@@ -46,7 +46,7 @@ curl \
 
 ### Refreshing access tokens
 
-Some identity providers issue access tokens that expire quickly along with refresh tokens that can be used to fetch new access tokens. To fetch a new access token, send a request to `https://<ssokenizer-url>/<provider-name>/refresh` via tokenizer. Include the sealed token in the `Proxy-Tokenizer` header, including a `st=refresh` parameter in the header. The response body will contain the new token, sealed for use with tokenizer and the Cache-Control header will contain the seconds until the token expires.
+Some identity providers issue access tokens that expire quickly along with refresh tokens that can be used to fetch new access tokens. To fetch a new access token, send a request to `https://<ssokenizer-url>/<provider-name>/refresh` via tokenizer. Include the sealed token in the `Proxy-Tokenizer` header with JSON-formatted parameters after a semicolon. Use `{"st":"refresh"}` to instruct the tokenizer to extract the refresh token instead of the access token. The response body will contain the new token, sealed for use with tokenizer and the Cache-Control header will contain the seconds until the token expires.
 
 The following demonstrates how you might refresh a token using cURL:
 
@@ -54,6 +54,6 @@ The following demonstrates how you might refresh a token using cURL:
 curl \
     -x $TOKENIZER_URL \
     -H "Proxy-Authorization: Bearer $PROXY_AUTH" \
-    -H "Proxy-Tokenizer: $SEALED_TOKEN; st=refresh" \
+    -H "Proxy-Tokenizer: $SEALED_TOKEN; {\"st\":\"refresh\"}" \
     http://$SSOKENIZER_HOSTNAME/$PROVIDER_NAME/refresh
 ```
