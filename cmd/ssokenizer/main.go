@@ -226,10 +226,6 @@ type IdentityProviderConfig struct {
 	MusicKitDeveloperToken string `yaml:"developer_token"`
 
 	SecretAuth SecretAuthConfig `yaml:"secret_auth"`
-
-	// source_id parameter to pass to Vanta provider. Only needed for "vanta" profile
-	// TODO: figure out a way to pass a map[string]string of "extra" stuff to providers.
-	SourceID string `yaml:"source_id"`
 }
 
 func (ic *IdentityProviderConfig) provider(name string, c *Config) (ssokenizer.Provider, error) {
@@ -313,14 +309,8 @@ func (ic *IdentityProviderConfig) oauthProvider(pc ssokenizer.ProviderConfig, c 
 			AuthStyle: xoauth2.AuthStyleInParams,
 		}
 
-		if ic.SourceID == "" {
-			// Enable dynamic source_id from URL parameter when not configured
-			op.ForwardParams = []string{"source_id"}
-		} else {
-			// Use static source_id from config
-			op.AuthRequestParams = map[string]string{"source_id": ic.SourceID}
-			op.TokenRequestParams = map[string]string{"source_id": ic.SourceID}
-		}
+		// Always use dynamic source_id from URL parameter
+		op.ForwardParams = []string{"source_id"}
 
 		return &vanta.Provider{Provider: op}, nil
 	case "oauth":
