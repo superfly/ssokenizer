@@ -86,9 +86,21 @@ func (p *Provider) handleStart(w http.ResponseWriter, r *http.Request) {
 
 	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
 
+	// Store forwarded parameters in transaction so they can be used in token exchange
+	tr.ForwardedParams = make(map[string]string)
 	for _, param := range p.ForwardParams {
 		if value := r.URL.Query().Get(param); value != "" {
 			opts = append(opts, oauth2.SetAuthURLParam(param, value))
+			tr.ForwardedParams[param] = value
+		}
+	}
+
+	// Re-save transaction with forwarded params
+	if len(tr.ForwardedParams) > 0 {
+		if err := ssokenizer.SaveTransaction(w, r, tr); err != nil {
+			r = withError(r, fmt.Errorf("save transaction: %w", err))
+			tr.ReturnError(w, r, "unexpected error")
+			return
 		}
 	}
 
@@ -139,6 +151,11 @@ func (p *Provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
+
+	// Add forwarded parameters from the start request to the token request
+	for key, value := range tr.ForwardedParams {
+		opts = append(opts, oauth2.SetAuthURLParam(key, value))
+	}
 
 	for key, value := range p.TokenRequestParams {
 		opts = append(opts, oauth2.SetAuthURLParam(key, value))

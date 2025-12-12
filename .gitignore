@@ -1,2 +1,4 @@
 .envrc
 vendor
+ssokenizer
+.DS_Store

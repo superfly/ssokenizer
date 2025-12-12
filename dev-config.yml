@@ -1,0 +1,18 @@
+url: https://judgeless-pleasantly-tammera.ngrok-free.dev
+seal_key: a29dcbaa824af8f0a8d435df6ca1f27cfbf1d5aaa03f3f87fa0a58f8a34d8f67
+
+http:
+  address: ":3000"
+
+identity_providers:
+  vanta:
+    secret_auth:
+      bearer: dev-tokenizer-auth
+    profile: vanta
+    client_id: "$VANTA_CLIENT_ID"
+    client_secret: "$VANTA_CLIENT_SECRET"
+    # source_id omitted to enable dynamic source_id from URL parameter
+    return_url: "http://localhost:4000/vanta/callback"
+    scopes:
+      - "connectors.self:write-resource"
+      - "connectors.self:read-resource"
