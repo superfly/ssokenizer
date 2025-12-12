@@ -158,7 +158,5 @@ identity_providers:
     client_id: "$VANTA_CLIENT_ID"
     client_secret: "$VANTA_CLIENT_SECRET"
     return_url: "$VANTA_RETURN_URL"
-    forward_params:
-      - source_id
     scopes:
       - "connectors.self:write-resource connectors.self:read-resource"
