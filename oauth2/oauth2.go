@@ -216,7 +216,7 @@ func (p *Provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 			WithError(err).
 			Info("refresh")
 
-		w.WriteHeader(http.StatusBadGateway)
+		writeOAuth2Error(w, http.StatusBadGateway, err)
 		return
 	}
 
