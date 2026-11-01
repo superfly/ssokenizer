@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,11 +29,93 @@ func init() {
 
 const rpAuth = "555"
 
+const (
+	markerDeadToken     = "dead-token"
+	markerBadClient     = "bad-client-token"
+	markerUpstream5xx   = "upstream-5xx-token"
+	markerTransportFail = "transport-fail-token"
+)
+
+// doRefresh runs a /refresh request through the tokenizer pipeline against
+// a sealed secret carrying the given marker refresh token. The mock IDP
+// dispatches its failure mode on the marker (see the marker* constants).
+func doRefresh(t *testing.T, marker string, authStyle oauth2.AuthStyle) (*http.Response, *idpRecorder) {
+	_, skz, tkzServer, _, p, idpRec := setupTestServersWithProvider(t, nil, nil, authStyle)
+
+	withRefresh := map[string]string{tokenizer.ParamSubtoken: tokenizer.SubtokenRefresh}
+	refreshClient, err := tokenizer.Client(tkzServer.URL, tokenizer.WithAuth(rpAuth), tokenizer.WithSecret(sealRefreshToken(t, p, marker), withRefresh))
+	assert.NoError(t, err)
+
+	resp, err := refreshClient.Get("http://" + skz.Address + "/idp/refresh")
+	assert.NoError(t, err)
+	t.Cleanup(func() { resp.Body.Close() })
+	return resp, idpRec
+}
+
+func sealRefreshToken(t *testing.T, p *Provider, refreshToken string) string {
+	t.Helper()
+	sealed, err := p.Tokenizer.SealedSecret(&tokenizer.OAuthProcessorConfig{
+		Token: &tokenizer.OAuthToken{RefreshToken: refreshToken},
+	})
+	if err != nil {
+		t.Fatalf("seal refresh token %q: %v", refreshToken, err)
+	}
+	return sealed
+}
+
+// assertRefreshErrorHeaders asserts the wire-shape headers of a /refresh
+// failure response: 502, the given Content-Type (use "" for absent),
+// and the RFC §5.1 cache-prevention pair.
+func assertRefreshErrorHeaders(t *testing.T, resp *http.Response, contentType string) {
+	t.Helper()
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
+	assert.Equal(t, contentType, resp.Header.Get("Content-Type"))
+	assert.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
+	assert.Equal(t, "no-cache", resp.Header.Get("Pragma"))
+}
+
+func readBody(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	body, err := io.ReadAll(resp.Body)
+	assert.NoError(t, err)
+	return string(body)
+}
+
+// idpRecorder captures requests received by the mock IDP so tests can
+// assert on the wire shape directly. One per test (no shared state).
+type idpRecorder struct {
+	mu       sync.Mutex
+	requests []*http.Request
+	next     http.Handler
+}
+
+func (r *idpRecorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	_ = req.ParseForm()
+	r.mu.Lock()
+	r.requests = append(r.requests, req)
+	r.mu.Unlock()
+	r.next.ServeHTTP(w, req)
+}
+
+func (r *idpRecorder) all() []*http.Request {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]*http.Request(nil), r.requests...)
+}
+
 func setupTestServers(t *testing.T) (*httptest.Server, *ssokenizer.Server, *httptest.Server, *httptest.Server) {
 	return setupTestServersWithParams(t, nil, nil)
 }
 
 func setupTestServersWithParams(t *testing.T, authParams, tokenParams map[string]string) (*httptest.Server, *ssokenizer.Server, *httptest.Server, *httptest.Server) {
+	rpServer, skz, tkzServer, idpServer, _, _ := setupTestServersWithProvider(t, authParams, tokenParams, oauth2.AuthStyleAutoDetect)
+	return rpServer, skz, tkzServer, idpServer
+}
+
+// setupTestServersWithProvider returns the four servers plus the registered
+// *Provider (for minting sealed secrets) and an idpRecorder (for asserting
+// what the IDP received).
+func setupTestServersWithProvider(t *testing.T, authParams, tokenParams map[string]string, authStyle oauth2.AuthStyle) (*httptest.Server, *ssokenizer.Server, *httptest.Server, *httptest.Server, *Provider, *idpRecorder) {
 	rpServer := httptest.NewServer(rp)
 	t.Cleanup(rpServer.Close)
 	returnURL, err := url.Parse(rpServer.URL)
@@ -40,14 +123,15 @@ func setupTestServersWithParams(t *testing.T, authParams, tokenParams map[string
 	t.Logf("rp=%s", rpServer.URL)
 
 	// Use the parameter-aware mock IDP if custom parameters are provided
-	var idpHandler http.HandlerFunc
+	var idpHandler http.Handler
 	if authParams != nil || tokenParams != nil {
 		idpHandler = createMockIDP(authParams, tokenParams)
 	} else {
 		idpHandler = idp
 	}
 
-	idpServer := httptest.NewServer(idpHandler)
+	idpRec := &idpRecorder{next: idpHandler}
+	idpServer := httptest.NewServer(idpRec)
 	t.Cleanup(idpServer.Close)
 	t.Logf("idp=%s", idpServer.URL)
 
@@ -78,7 +162,7 @@ func setupTestServersWithParams(t *testing.T, authParams, tokenParams map[string
 
 	// we don't know our URL in tests until the server is started, so we can't
 	// populate this earlier.
-	providers["idp"] = &Provider{
+	provider := &Provider{
 		ProviderConfig: ssokenizer.ProviderConfig{
 			Tokenizer: ssokenizer.TokenizerConfig{
 				SealKey: sealKey,
@@ -91,16 +175,18 @@ func setupTestServersWithParams(t *testing.T, authParams, tokenParams map[string
 			ClientID:     testClientID,
 			ClientSecret: testClientSecret,
 			Endpoint: oauth2.Endpoint{
-				AuthURL:  idpServer.URL + "/auth",
-				TokenURL: idpServer.URL + "/token",
+				AuthURL:   idpServer.URL + "/auth",
+				TokenURL:  idpServer.URL + "/token",
+				AuthStyle: authStyle,
 			},
 			Scopes: []string{"my scope"},
 		},
 		AuthRequestParams:  authParams,
 		TokenRequestParams: tokenParams,
 	}
+	providers["idp"] = provider
 
-	return rpServer, skz, tkzServer, idpServer
+	return rpServer, skz, tkzServer, idpServer, provider, idpRec
 }
 
 func checkResponse(t *testing.T, resp *http.Response, expectedPrefix, expectedState string) string {
@@ -180,6 +266,34 @@ func TestOauth2Parallel(t *testing.T) {
 	resp, err := clientB.Get("http://" + skz.Address + "/idp/start?state=second")
 	assert.NoError(t, err)
 	checkResponse(t, resp, rpServer.URL, "second")
+}
+
+func TestRefreshInvalidGrant(t *testing.T) {
+	resp, _ := doRefresh(t, markerDeadToken, oauth2.AuthStyleInHeader)
+
+	assertRefreshErrorHeaders(t, resp, "application/json")
+	assert.Equal(t, `{"error":"invalid_grant","error_description":"Token revoked","error_uri":"https://provider/errors/invalid_grant"}`, readBody(t, resp))
+}
+
+func TestRefreshInvalidClient(t *testing.T) {
+	resp, _ := doRefresh(t, markerBadClient, oauth2.AuthStyleInHeader)
+
+	assertRefreshErrorHeaders(t, resp, "application/json")
+	assert.Equal(t, `{"error":"invalid_client"}`, readBody(t, resp))
+}
+
+func TestRefreshUpstream5xx(t *testing.T) {
+	resp, _ := doRefresh(t, markerUpstream5xx, oauth2.AuthStyleInHeader)
+
+	assertRefreshErrorHeaders(t, resp, "")
+	assert.Equal(t, "", readBody(t, resp), "upstream HTML must not appear in /refresh body")
+}
+
+func TestRefreshTransportError(t *testing.T) {
+	resp, _ := doRefresh(t, markerTransportFail, oauth2.AuthStyleInHeader)
+
+	assertRefreshErrorHeaders(t, resp, "")
+	assert.Equal(t, "", readBody(t, resp))
 }
 
 const (
@@ -362,6 +476,33 @@ var idp = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		if username != testClientID || password != testClientSecret {
 			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		switch r.Form.Get("refresh_token") {
+		case markerDeadToken:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid_grant","error_description":"Token revoked","error_uri":"https://provider/errors/invalid_grant"}`))
+			return
+		case markerBadClient:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"invalid_client"}`))
+			return
+		case markerUpstream5xx:
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("<html>503 Service Unavailable</html>"))
+			return
+		case markerTransportFail:
+			// Drop the connection mid-request so the OAuth2 library sees a
+			// transport-level error (no Response object).
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				panic("hijack: " + err.Error())
+			}
+			_ = conn.Close()
 			return
 		}
 
