@@ -1,3 +1,4 @@
+app = "ssokenizer"
 primary_region = "ord"
 host_dedication_id = "fly-internal"
 kill_signal = "SIGTERM"
